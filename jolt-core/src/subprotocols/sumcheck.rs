@@ -144,7 +144,7 @@ impl<F: PrimeField> CubicSumcheckParams<F> {
         } else if *flag == F::one() {
             *eq * *h
         } else {
-            *eq * (*flag * h + (F::one() - flag))
+            *eq * (*flag * h + (F::one() + flag.neg()))
         }
     }
 
@@ -694,8 +694,10 @@ impl<F: PrimeField> SumcheckInstanceProof<F> {
         for _j in 0..params.num_rounds {
 
             let len = params.poly_As[0].len() / 2;
+            let eq_span = tracing::span!(tracing::Level::TRACE, "eq_evals");
+            let _eq_enter = eq_span.enter();
             let eq_evals: Vec<(F, F, F)> = (0..len)
-                // .into_par_iter()
+                .into_par_iter()
                 .map(|i| {
                     let low = i;
                     let high = len + i;
@@ -709,7 +711,11 @@ impl<F: PrimeField> SumcheckInstanceProof<F> {
                     (eval_point_0, eval_point_2, eval_point_3)
                 })
                 .collect();
+            drop(_eq_enter);
+            drop(eq_span);
 
+            let flag_span = tracing::span!(tracing::Level::TRACE, "flag_evals");
+            let _flag_enter = flag_span.enter();
             // Batch<MLEIndex<(eval_0, eval_2, eval_3)>>
             let flag_evals: Vec<Vec<(F, F, F)>> = (0..params.poly_Bs.len())
                 .into_par_iter()
@@ -723,44 +729,79 @@ impl<F: PrimeField> SumcheckInstanceProof<F> {
 
                             let eval_point_0 = poly[low];
                             let m_eq = poly[high] - poly[low];
-                            let eval_point_2 = poly[high] + m_eq;
-                            let eval_point_3 = eval_point_2 + m_eq;
+                            let (eval_point_2, eval_point_3) = if m_eq.is_zero() {
+                                (poly[high], poly[high])
+                            } else {
+                                let eval_point_2 = poly[high] + m_eq;
+                                let eval_point_3 = eval_point_2 + m_eq;
+                                (eval_point_2, eval_point_3)
+                            };
+
                             (eval_point_0, eval_point_2, eval_point_3)
                         })
                         .collect();
                     mle_evals
                 })
                 .collect();
+            drop(_flag_enter);
+            drop(flag_span);
 
+            let evals_span = tracing::span!(tracing::Level::TRACE, "evals");
+            let _evals_enter = evals_span.enter();
             let evals: Vec<(F, F, F)> = (0..params.poly_As.len())
                 .into_par_iter()
                 .map(|batch_index| {
-                    let thing: (F, F, F) = (0..len)
+                    let eval: (F, F, F) = (0..len)
                         .map(|mle_index| {
                             let low = mle_index;
                             let high = len + mle_index;
 
-                            let poly_0 = params.poly_As[batch_index][low];
-                            let poly_m = params.poly_As[batch_index][high]
-                                - params.poly_As[batch_index][low];
-                            let poly_2 = params.poly_As[batch_index][high] + poly_m;
+                            let eq_eval = eq_evals[low];
+                            let flag_eval = flag_evals[params.a_to_b[batch_index]][mle_index];
+                            let poly_eval = &params.poly_As[batch_index];
+
+                            let eval_point_0 = params.combine(&poly_eval[low], &flag_eval.0, &eq_eval.0);
+
+                            // let eval_point_0 = if flag_eval.0.is_zero() {
+                            //     eq_eval.0
+                            // } else if flag_eval.0.is_one() {
+                            //     eq_eval.0 * poly_eval[low]
+                            // } else {
+                            //     eq_eval.0 * (flag_eval.0 * poly_eval[low] + (F::one() - flag_eval.0))
+                            // };
+
+                            // let (eval_point_2, opt_poly_2_res): (F, Option<(F, F)>) = if flag_eval.1.is_zero() {
+                            //     (eq_eval.1, None)
+                            // } else if flag_eval.1.is_one() {
+                            //     let poly_m = poly_eval[high] - poly_eval[low];
+                            //     let poly_2 = poly_eval[high] + poly_m;
+                            //     (eq_eval.1 * poly_2, Some((poly_2, poly_m)))
+                            // } else {
+                            //     let poly_m = poly_eval[high] - poly_eval[low];
+                            //     let poly_2 = poly_eval[high] + poly_m;
+                            //     (eq_eval.1 * (flag_eval.1 * poly_2 + (F::one() - flag_eval.1)), Some((poly_2, poly_m)))
+                            // };
+
+                            // let eval_point_3 = if let Some((poly_2, poly_m)) = opt_poly_2_res {
+                            //     if flag_eval.2.is_zero() {
+                            //         eq_eval.2 // TODO(sragss): Path may never happen
+                            //     } else if flag_eval.2.is_one() {
+                            //         let poly_3 = poly_2 + poly_m;
+                            //         eq_eval.2 * poly_3
+                            //     } else {
+                            //         let poly_3 = poly_2 + poly_m;
+                            //         (eq_eval.2 * (flag_eval.2 * poly_3 + (F::one() - flag_eval.2)))
+                            //     }
+                            // } else {
+                            //     eq_eval.2
+                            // };
+
+                            let poly_m = poly_eval[high] - poly_eval[low];
+                            let poly_2 = poly_eval[high] + poly_m;
                             let poly_3 = poly_2 + poly_m;
 
-                            let eval_point_0 = params.combine(
-                                &poly_0,
-                                &flag_evals[params.a_to_b[batch_index]][mle_index].0,
-                                &eq_evals[mle_index].0,
-                            );
-                            let eval_point_2 = params.combine(
-                                &poly_2,
-                                &flag_evals[params.a_to_b[batch_index]][mle_index].1,
-                                &eq_evals[mle_index].1,
-                            );
-                            let eval_point_3 = params.combine(
-                                &poly_3,
-                                &flag_evals[params.a_to_b[batch_index]][mle_index].2,
-                                &eq_evals[mle_index].2,
-                            );
+                            let eval_point_2 = params.combine(&poly_2, &flag_eval.1, &eq_eval.1);
+                            let eval_point_3 = params.combine(&poly_3, &flag_eval.2, &eq_eval.2);
 
                             (eval_point_0, eval_point_2, eval_point_3)
                         })
@@ -769,9 +810,11 @@ impl<F: PrimeField> SumcheckInstanceProof<F> {
                             |(sum_0, sum_2, sum_3), (a, b, c)| (sum_0 + a, sum_2 + b, sum_3 + c),
                         );
 
-                    thing
+                        eval
                 })
                 .collect();
+            drop(_evals_enter);
+            drop(evals_span);
 
             let evals_combined_0 = (0..evals.len()).map(|i| evals[i].0 * coeffs[i]).sum();
             let evals_combined_2 = (0..evals.len()).map(|i| evals[i].1 * coeffs[i]).sum();
@@ -796,7 +839,11 @@ impl<F: PrimeField> SumcheckInstanceProof<F> {
             r.push(r_j);
 
             // bound all tables to the verifier's challenege
+            let bound_span = tracing::span!(tracing::Level::TRACE, "apply_bound_poly_var_top");
+            let _bound_enter = bound_span.enter();
             params.apply_bound_poly_var_top(&r_j);
+            drop(_bound_enter);
+            drop(bound_span);
 
             e = poly.evaluate(&r_j);
             cubic_polys.push(poly.compress());
