@@ -325,6 +325,21 @@ impl<F: PrimeField> DensePolynomial<F> {
         self.len = n;
     }
 
+    pub fn bound_poly_var_top_pre_compute(&mut self, r: &F, pre_compute: &[F]) {
+        let n = self.len() / 2;
+        assert_eq!(pre_compute.len(), n);
+
+        for i in 0..n {
+            // let m = self.Z[i + n] - self.Z[i];
+            let m = pre_compute[i];
+            if !m.is_zero() {
+                self.Z[i] += *r * m;
+            }
+        }
+        self.num_vars -= 1;
+        self.len = n;
+    }
+
     pub fn bound_poly_var_bot(&mut self, r: &F) {
         let n = self.len() / 2;
         for i in 0..n {

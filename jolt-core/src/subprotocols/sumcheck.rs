@@ -194,9 +194,9 @@ impl<F: PrimeField> CubicSumcheckParams<F> {
 
     pub fn apply_bound_poly_var_top(&mut self, r_j: &F) {
         let mut all_polys_iter: Vec<&mut DensePolynomial<F>> = self.poly_As.iter_mut()
-        .chain(self.poly_Bs.iter_mut())
-        .chain(std::iter::once(&mut self.poly_eq))
-        .collect();
+            .chain(self.poly_Bs.iter_mut())
+            .chain(std::iter::once(&mut self.poly_eq))
+            .collect();
 
         all_polys_iter.par_iter_mut().for_each(|poly| poly.bound_poly_var_top(&r_j));
     }
@@ -748,10 +748,11 @@ impl<F: PrimeField> SumcheckInstanceProof<F> {
 
             let evals_span = tracing::span!(tracing::Level::TRACE, "evals");
             let _evals_enter = evals_span.enter();
-            let evals: Vec<(F, F, F)> = (0..params.poly_As.len())
+            // Batch is Vec<(C(0), C(2), C(3), poly_ms)>
+            let evals: Vec<(F, F, F, Vec<F>)> = (0..params.poly_As.len())
                 .into_par_iter()
                 .map(|batch_index| {
-                    let eval: (F, F, F) = (0..len)
+                    let eval: Vec<(F, F, F, F)> = (0..len)
                         .map(|mle_index| {
                             let low = mle_index;
                             let high = len + mle_index;
@@ -803,14 +804,20 @@ impl<F: PrimeField> SumcheckInstanceProof<F> {
                             let eval_point_2 = params.combine(&poly_2, &flag_eval.1, &eq_eval.1);
                             let eval_point_3 = params.combine(&poly_3, &flag_eval.2, &eq_eval.2);
 
-                            (eval_point_0, eval_point_2, eval_point_3)
-                        })
-                        .fold(
-                            (F::zero(), F::zero(), F::zero()),
-                            |(sum_0, sum_2, sum_3), (a, b, c)| (sum_0 + a, sum_2 + b, sum_3 + c),
-                        );
+                            (eval_point_0, eval_point_2, eval_point_3, poly_m)
+                        }).collect();
+                        let mut sum_0 = F::zero();
+                        let mut sum_2 = F::zero();
+                        let mut sum_3 = F::zero();
+                        let mut poly_ms: Vec<F> = Vec::with_capacity(len);
+                        for thing in eval {
+                            sum_0 += thing.0;
+                            sum_2 += thing.1;
+                            sum_3 += thing.2;
+                            poly_ms.push(thing.3);
+                        }
 
-                        eval
+                        (sum_0, sum_2, sum_3, poly_ms)
                 })
                 .collect();
             drop(_evals_enter);
@@ -820,13 +827,13 @@ impl<F: PrimeField> SumcheckInstanceProof<F> {
             let evals_combined_2 = (0..evals.len()).map(|i| evals[i].1 * coeffs[i]).sum();
             let evals_combined_3 = (0..evals.len()).map(|i| evals[i].2 * coeffs[i]).sum();
 
-            let evals = vec![
+            let evaluation_points = vec![
                 evals_combined_0,
                 e - evals_combined_0,
                 evals_combined_2,
                 evals_combined_3,
             ];
-            let poly = UniPoly::from_evals(&evals);
+            let poly = UniPoly::from_evals(&evaluation_points);
 
             // append the prover's message to the transcript
             <UniPoly<F> as AppendToTranscript<G>>::append_to_transcript(&poly, b"poly", transcript);
@@ -841,7 +848,23 @@ impl<F: PrimeField> SumcheckInstanceProof<F> {
             // bound all tables to the verifier's challenege
             let bound_span = tracing::span!(tracing::Level::TRACE, "apply_bound_poly_var_top");
             let _bound_enter = bound_span.enter();
-            params.apply_bound_poly_var_top(&r_j);
+
+            // let mut all_polys_iter: Vec<&mut DensePolynomial<F>> = self.poly_As.iter_mut()
+            //     .chain(self.poly_Bs.iter_mut())
+            //     .chain(std::iter::once(&mut self.poly_eq))
+            //     .collect();
+
+            // all_polys_iter.par_iter_mut().for_each(|poly| poly.bound_poly_var_top(&r_j));
+            // params.apply_bound_poly_var_top(&r_j);
+
+            params.poly_eq.bound_poly_var_top(&r_j);
+            params.poly_Bs.par_iter_mut().for_each(|poly| poly.bound_poly_var_top_many_ones(&r_j));
+            params.poly_As.par_iter_mut().enumerate().for_each(|(batch_index, poly)| poly.bound_poly_var_top_pre_compute(&r_j, &evals[batch_index].3));
+
+
+
+
+
             drop(_bound_enter);
             drop(bound_span);
 
