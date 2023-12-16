@@ -87,6 +87,9 @@ impl<F: PrimeField> GrandProductCircuit<F> {
     }
 
     // TODO(sragss): Attempt sparse repr
+    /// Idea here is that we can interleave the polys to have a representation closer to that
+    /// of a binary tree of multiplication gates (they alternate 0/1). This can then be reused
+    /// in sumcheck itself.
     pub fn new_interleaves(leaves: Vec<F>) {
         assert!(is_power_of_two(leaves.len()));
 
@@ -100,15 +103,15 @@ impl<F: PrimeField> GrandProductCircuit<F> {
         // Allocate all the vectors
         let mut layer_size = num_leaves / 2;
         let span_layer = tracing::info_span!("Layer Allocation");
-        {
-            let _enter = span_layer.enter();
-            for layer_index in 1..num_layers {
-                let layer = vec![F::one(); layer_size];
-                tree.push(layer);
-                println!("allocating {layer_size}");
-                layer_size = layer_size / 2;
-            }
+        let _enter = span_layer.enter();
+        for layer_index in 1..num_layers {
+            // let layer = vec![F::one(); layer_size];
+            let layer = Vec::with_capacity(layer_size);
+            tree.push(layer);
+            println!("allocating {layer_size}");
+            layer_size = layer_size / 2;
         }
+        drop(_enter);
         drop(span_layer);
 
         let mut layer_leaves = num_leaves / 2;
@@ -116,13 +119,19 @@ impl<F: PrimeField> GrandProductCircuit<F> {
         {
             let _enter = span_interleave.enter();
             for layer_index in 1..num_layers {
-                for leaf_index in 0..layer_leaves {
-                    let l = tree[layer_index - 1][2*leaf_index];
-                    let r = tree[layer_index - 1][2*leaf_index+1];
-                    if !(l.is_one() && r.is_one()) {
-                        tree[layer_index][leaf_index] = mul_0_1_optimized(&l, &r);
+                let span_layer = tracing::info_span!("Layer", layer_index = layer_index);
+                {
+                    let _enter = span_layer.enter();
+                    for leaf_index in 0..layer_leaves {
+                        let l = tree[layer_index - 1][2*leaf_index];
+                        let r = tree[layer_index - 1][2*leaf_index+1];
+                        // if !(l.is_one() && r.is_one()) {
+                            // tree[layer_index][leaf_index] = mul_0_1_optimized(&l, &r);
+                        // }
+                        tree[layer_index].push(mul_0_1_optimized(&l, &r));
                     }
                 }
+                drop(span_layer);
 
                 layer_leaves /= 2;
             }
