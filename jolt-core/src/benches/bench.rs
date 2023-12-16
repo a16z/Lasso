@@ -8,12 +8,14 @@ use crate::lasso::surge::Surge;
 use crate::poly::dense_mlpoly::bench::{
     init_commit_bench, init_commit_bench_ones, init_commit_small, run_commit_bench,
 };
-use crate::poly::dense_mlpoly::CommitHint;
+use crate::poly::dense_mlpoly::{CommitHint, DensePolynomial};
+use crate::subprotocols::grand_product::GrandProductCircuit;
 use crate::utils::math::Math;
 use crate::utils::random::RandomTape;
 use crate::{jolt::instruction::xor::XORInstruction, utils::gen_random_point};
 use ark_curve25519::{EdwardsProjective, Fr};
-use ark_std::test_rng;
+use ark_std::rand::thread_rng;
+use ark_std::{test_rng, UniformRand, One, rand::Rng};
 use common::ELFInstruction;
 use criterion::black_box;
 use merlin::Transcript;
@@ -27,6 +29,7 @@ pub enum BenchType {
     RV32,
     Poly,
     EverythingExceptR1CS,
+    GPConstruction
 }
 
 #[allow(unreachable_patterns)] // good errors on new BenchTypes
@@ -37,6 +40,7 @@ pub fn benchmarks(bench_type: BenchType, num_cycles: Option<usize>) -> Vec<(trac
         BenchType::RV32 => rv32i_lookup_benchmarks(num_cycles),
         BenchType::Poly => dense_ml_poly(),
         BenchType::EverythingExceptR1CS => prove_e2e_except_r1cs(num_cycles),
+        BenchType::GPConstruction => gp_construction(num_cycles),
         _ => panic!("BenchType does not have a mapping"),
     }
 }
@@ -246,6 +250,60 @@ fn dense_ml_poly() -> Vec<(tracing::Span, Box<dyn FnOnce()>)> {
             Box::new(task) as Box<dyn FnOnce()>,
         ));
     }
+
+    tasks
+}
+
+fn gp_construction(num_cycles: Option<usize>) -> Vec<(tracing::Span, Box<dyn FnOnce()>)> {
+    let num_cycles = num_cycles.unwrap_or(65536);
+
+    let mut tasks = Vec::new();
+
+    let mut rng = thread_rng();
+
+
+    // Plain strategy
+    let left_leaves = vec![Fr::rand(&mut rng); num_cycles / 2];
+    let right_leaves = vec![Fr::rand(&mut rng); num_cycles / 2];
+    let task = move || {
+        GrandProductCircuit::new_split(DensePolynomial::new(left_leaves.clone()), DensePolynomial::new(right_leaves.clone()));
+    };
+
+    tasks.push((
+        tracing::info_span!("Plain"),
+        Box::new(task) as Box<dyn FnOnce()>
+    ));
+
+    let left_leaves_mixed = vec![if rng.gen::<f64>() < 0.8 { Fr::one() } else { Fr::rand(&mut rng) }; num_cycles / 2];
+    let right_leaves_mixed = vec![if rng.gen::<f64>() < 0.8 { Fr::one() } else { Fr::rand(&mut rng) }; num_cycles / 2];
+    let task = move || {
+        GrandProductCircuit::new_split(DensePolynomial::new(left_leaves_mixed), DensePolynomial::new(right_leaves_mixed));
+    };
+
+    tasks.push((
+        tracing::info_span!("Plain (80% ones)"),
+        Box::new(task) as Box<dyn FnOnce()>
+    ));
+
+    let leaves = vec![Fr::rand(&mut rng); num_cycles];
+    let task = move || {
+        GrandProductCircuit::new_interleaves(leaves.clone());
+    };
+
+    tasks.push((
+        tracing::info_span!("Interleave"),
+        Box::new(task) as Box<dyn FnOnce()>
+    ));
+
+    let leaves_mixed = vec![if rng.gen::<f64>() < 0.8 { Fr::one() } else { Fr::rand(&mut rng) }; num_cycles];
+    let task = move || {
+        GrandProductCircuit::new_interleaves(leaves_mixed);
+    };
+
+    tasks.push((
+        tracing::info_span!("Interleave (80% ones)"),
+        Box::new(task) as Box<dyn FnOnce()>
+    ));
 
     tasks
 }

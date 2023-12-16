@@ -3,14 +3,14 @@ use crate::poly::dense_mlpoly::DensePolynomial;
 use crate::poly::eq_poly::EqPolynomial;
 use crate::subprotocols::sumcheck::CubicSumcheckType;
 use crate::utils::math::Math;
-use crate::utils::mul_0_1_optimized;
+use crate::utils::{mul_0_1_optimized, is_power_of_two};
 use crate::utils::transcript::ProofTranscript;
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_serialize::*;
 use merlin::Transcript;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GrandProductCircuit<F> {
     left_vec: Vec<DensePolynomial<F>>,
     right_vec: Vec<DensePolynomial<F>>,
@@ -85,6 +85,161 @@ impl<F: PrimeField> GrandProductCircuit<F> {
             right_vec,
         }
     }
+
+    // TODO(sragss): Attempt sparse repr
+    pub fn new_interleaves(leaves: Vec<F>) {
+        assert!(is_power_of_two(leaves.len()));
+
+        let num_leaves = leaves.len();
+        let num_layers = num_leaves.log_2(); 
+
+        let mut tree: Vec<Vec<F>> = Vec::with_capacity(num_layers);
+
+        tree.push(leaves);
+
+        // Allocate all the vectors
+        let mut layer_size = num_leaves / 2;
+        let span_layer = tracing::info_span!("Layer Allocation");
+        {
+            let _enter = span_layer.enter();
+            for layer_index in 1..num_layers {
+                let layer = vec![F::one(); layer_size];
+                tree.push(layer);
+                println!("allocating {layer_size}");
+                layer_size = layer_size / 2;
+            }
+        }
+        drop(span_layer);
+
+        let mut layer_leaves = num_leaves / 2;
+        let span_interleave = tracing::info_span!("Interleave Loop");
+        {
+            let _enter = span_interleave.enter();
+            for layer_index in 1..num_layers {
+                for leaf_index in 0..layer_leaves {
+                    let l = tree[layer_index - 1][2*leaf_index];
+                    let r = tree[layer_index - 1][2*leaf_index+1];
+                    if !(l.is_one() && r.is_one()) {
+                        tree[layer_index][leaf_index] = mul_0_1_optimized(&l, &r);
+                    }
+                }
+
+                layer_leaves /= 2;
+            }
+        }
+        drop(span_interleave);
+
+        // TODO(sragss): Have to convert this to a new format of GrandProductCircuit
+    }
+
+    /// Fast version of new_split intended to handle GKR leaf construction vertically (depth-first) rather than horizontally to aid with caching.
+    // pub fn new_fast(left_leaves: Vec<F>, right_leaves: Vec<F>) -> Self {
+    //     assert_eq!(left_leaves.len(), right_leaves.len());
+    //     assert!(is_power_of_two(left_leaves.len()));
+
+    //     let num_leaves = left_leaves.len() * 2;
+    //     let num_layers = num_leaves.log_2(); 
+
+    //     let mut left_vec: Vec<Vec<F>> = Vec::with_capacity(num_layers);
+    //     let mut right_vec: Vec<Vec<F>> = Vec::with_capacity(num_layers);
+
+    //     // TODO(sragss): For now we're assuming l * r, but could do vertical trees with each as well.
+    //     left_vec.push(left_leaves);
+    //     right_vec.push(right_leaves);
+
+    //     // Allocate all the vectors
+    //     let mut layer_size = num_leaves / 4;
+    //     for layer_index in 1..num_layers {
+    //         let left = vec![F::one(); layer_size];
+    //         let right = left.clone();
+    //         left_vec.push(left);
+    //         right_vec.push(right);
+    //         println!("allocating l, r {layer_size}");
+    //         layer_size = layer_size / 2;
+    //     }
+
+    //     // Tunable
+    //     let num_subtree_leaves = 4; 
+    //     let num_subtree_muls = num_subtree_leaves / 2; // Number of multiplications performed during this subtree
+
+    //     assert!(num_subtree_leaves < num_leaves); // TODO(sragss): Just fall back to new_split
+    //     let subtree_height = num_subtree_leaves.log_2();
+
+    //     // let num_subtrees = num_layers / subtree_height;
+    //     // for subtree_index in 0..num_subtrees {
+
+    //     //     for leaf_index in (subtree_index * num_subtree_leaves)..((subtree_index + 1) * num_subtree_leaves) {
+    //     //         assert!(leaf_index < num_leaves);
+
+    //     //         for height_index in (subtree_index * subtree_height + 1)..((subtree_index + 1) * subtree_height) {
+    //     //             assert!(height_index < num_layers);
+
+    //     //             if leaf_index < num_leaves / 2 { // left
+    //     //                 left_vec[height_index + 1][leaf_index] = left_vec[height_index][leaf_index] * right_vec[height_index][leaf_index];
+    //     //             } else { // right
+    //     //                 right_vec[height_index + 1][leaf_index - num_leaves / 2] = left_vec[height_index][leaf_index] * right_vec[height_index][leaf_index];
+    //     //             }
+    //     //         }
+    //     //     }
+    //     // }
+
+    //     // let num_subtrees = num_leaves / num_subtree_leaves; // Should be a power of 2!
+    //     // for subtree_index in 0..num_subtrees {
+    //     //     let mut num_muls = num_subtree_muls;
+    //     //     println!("\nSubtree {subtree_index}");
+
+    //     //     for height_index in 0..subtree_height {
+    //     //         println!("Height {height_index}");
+    //     //         for leaf_index in (subtree_index * num_muls)..((subtree_index + 1) * num_muls) {
+    //     //             println!("Leaf {leaf_index}");
+    //     //             if leaf_index < num_muls { // left
+    //     //                 println!("Loading L[{}][{}] = L[{}][{}] * R[{}][{}]", height_index + 1, leaf_index, height_index, leaf_index, height_index, leaf_index);
+    //     //                 left_vec[height_index + 1][leaf_index] = left_vec[height_index][leaf_index] * right_vec[height_index][leaf_index];
+    //     //             } else { // right
+    //     //                 let update_leaf_index = leaf_index - num_muls;
+    //     //                 println!("Loading R[{}][{}] = L[{}][{}] * R[{}][{}]", height_index + 1, update_leaf_index, height_index, leaf_index, height_index, leaf_index);
+    //     //                 right_vec[height_index + 1][update_leaf_index] = 
+    //     //                     left_vec[height_index][leaf_index] 
+    //     //                     * right_vec[height_index][leaf_index];
+    //     //             }
+    //     //         }
+    //     //         num_muls = num_muls / 2;
+    //     //     }
+
+    //     // }
+
+    //     let num_subtrees = num_leaves / num_subtree_leaves; // Should be a power of 2!
+    //     for subtree_index in 0..num_subtrees {
+    //         let mut num_muls = num_subtree_muls;
+
+    //         for height_index in 0..subtree_height {
+    //             for leaf_index in (subtree_index * num_muls)..((subtree_index + 1) * num_muls) {
+    //                 if leaf_index < num_muls { // left
+    //                     println!("Loading L[{}][{}] = L[{}][{}] * L[{}][{}]", height_index + 1, leaf_index, height_index, leaf_index, height_index, leaf_index);
+    //                     left_vec[height_index + 1][leaf_index] = left_vec[height_index][leaf_index] * right_vec[height_index][leaf_index];
+    //                 } else { // right
+    //                     let update_leaf_index = leaf_index - num_muls;
+    //                     println!("Loading R[{}][{}] = L[{}][{}] * R[{}][{}]", height_index + 1, update_leaf_index, height_index, leaf_index, height_index, leaf_index);
+    //                     right_vec[height_index + 1][update_leaf_index] = 
+    //                         left_vec[height_index][leaf_index] 
+    //                         * right_vec[height_index][leaf_index];
+    //                 }
+    //             }
+    //             num_muls = num_muls / 2;
+    //         }
+
+    //     }
+
+    //     // TODO(sragss): What to do about top of tree??
+
+    //     let left_vec = left_vec.into_iter().map(|v| DensePolynomial::new(v)).collect();
+    //     let right_vec = right_vec.into_iter().map(|v| DensePolynomial::new(v)).collect();
+
+    //     GrandProductCircuit {
+    //         left_vec,
+    //         right_vec
+    //     }
+    // }
 
     pub fn evaluate(&self) -> F {
         let len = self.left_vec.len();
@@ -434,7 +589,7 @@ impl<F: PrimeField> BatchedGrandProductArgument<F> {
 mod grand_product_circuit_tests {
     use super::*;
     use ark_curve25519::{EdwardsProjective as G1Projective, Fr};
-    use ark_std::{One, Zero};
+    use ark_std::{One, Zero, rand::thread_rng, UniformRand};
 
     #[test]
     fn prove_verify() {
@@ -569,5 +724,18 @@ mod grand_product_circuit_tests {
             - verifier_flag_eval;
         assert_eq!(verify_claims[0], verifier_read_eval);
         assert_eq!(verify_claims[1], verifier_write_eval);
+    }
+
+    #[test]
+    fn fast_gp_construct_parity() {
+        let num_leaves = 8;
+        let mut rng = thread_rng();
+
+        let left_leaves = vec![Fr::rand(&mut rng); num_leaves / 2];
+        let right_leaves = vec![Fr::rand(&mut rng); num_leaves / 2];
+
+        let other_gp = GrandProductCircuit::new_fast(left_leaves.clone(), right_leaves.clone());
+        let gp = GrandProductCircuit::new_split(DensePolynomial::new(left_leaves.clone()), DensePolynomial::new(right_leaves.clone()));
+        assert_eq!(gp, other_gp);
     }
 }
