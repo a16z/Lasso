@@ -11,7 +11,7 @@ use ark_ec::VariableBaseMSM;
 #[cfg(not(feature = "ark-msm"))]
 use crate::msm::VariableBaseMSM;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MultiCommitGens<G> {
   pub n: usize,
   pub G: Vec<G>,

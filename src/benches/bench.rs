@@ -76,6 +76,7 @@ macro_rules! single_pass_lasso {
 pub enum BenchType {
   JoltDemo,
   Halo2Comparison,
+  Zeromorph,
 }
 
 #[allow(unreachable_patterns)] // good errors on new BenchTypes
@@ -83,8 +84,86 @@ pub fn benchmarks(bench_type: BenchType) -> Vec<(tracing::Span, fn())> {
   match bench_type {
     BenchType::JoltDemo => jolt_demo_benchmarks(),
     BenchType::Halo2Comparison => halo2_comparison_benchmarks(),
+    BenchType::Zeromorph => zeromorph(),
     _ => panic!("BenchType does not have a mapping"),
   }
+}
+
+fn zeromorph() -> Vec<(tracing::Span, fn())> {
+  vec![
+    single_pass_lasso!(
+      "And(2^10)",
+      Fr,
+      EdwardsProjective,
+      AndSubtableStrategy,
+      /* C= */ 1,
+      /* M= */ 1 << 16,
+      /* S= */ 1 << 10
+    ),
+    single_pass_lasso!(
+      "And(2^12)",
+      Fr,
+      EdwardsProjective,
+      AndSubtableStrategy,
+      /* C= */ 1,
+      /* M= */ 1 << 16,
+      /* S= */ 1 << 12
+    ),
+    single_pass_lasso!(
+      "And(2^14)",
+      Fr,
+      EdwardsProjective,
+      AndSubtableStrategy,
+      /* C= */ 1,
+      /* M= */ 1 << 16,
+      /* S= */ 1 << 14
+    ),
+    single_pass_lasso!(
+      "And(2^16)",
+      Fr,
+      EdwardsProjective,
+      AndSubtableStrategy,
+      /* C= */ 1,
+      /* M= */ 1 << 16,
+      /* S= */ 1 << 16
+    ),
+    single_pass_lasso!(
+      "And(2^18)",
+      Fr,
+      EdwardsProjective,
+      AndSubtableStrategy,
+      /* C= */ 1,
+      /* M= */ 1 << 16,
+      /* S= */ 1 << 18
+    ),
+    single_pass_lasso!(
+      "And(2^20)",
+      Fr,
+      EdwardsProjective,
+      AndSubtableStrategy,
+      /* C= */ 1,
+      /* M= */ 1 << 16,
+      /* S= */ 1 << 20
+    ),
+    single_pass_lasso!(
+      "And(2^22)",
+      Fr,
+      EdwardsProjective,
+      AndSubtableStrategy,
+      /* C= */ 1,
+      /* M= */ 1 << 16,
+      /* S= */ 1 << 22
+    ),
+    single_pass_lasso!(
+      "And(2^24)",
+      Fr,
+      EdwardsProjective,
+      AndSubtableStrategy,
+      /* C= */ 1,
+      /* M= */ 1 << 16,
+      /* S= */ 1 << 24
+    ),
+  ]
 }
 
 fn jolt_demo_benchmarks() -> Vec<(tracing::Span, fn())> {

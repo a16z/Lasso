@@ -8,12 +8,12 @@ use merlin::Transcript;
 
 use crate::{
   lasso::{densified::DensifiedRepresentation, memory_checking::GrandProducts},
-  poly::dense_mlpoly::{DensePolynomial, PolyCommitment, PolyCommitmentGens, PolyEvalProof},
-  poly::eq_poly::EqPolynomial,
-  utils::errors::ProofVerifyError,
+  poly::{dense_mlpoly::DensePolynomial, eq_poly::EqPolynomial},
+  subprotocols::hyrax::{PolyCommitment, PolyCommitmentGens, PolyEvalProof},
+  subprotocols::{hyrax::Hyrax, traits::PolynomialCommitmentScheme},
   utils::math::Math,
-  utils::random::RandomTape,
   utils::transcript::{AppendToTranscript, ProofTranscript},
+  utils::{errors::ProofVerifyError, random::RandomTape},
 };
 
 #[cfg(feature = "multicore")]
@@ -179,7 +179,7 @@ where
     &self,
     gens: &PolyCommitmentGens<G>,
   ) -> CombinedTableCommitment<G> {
-    let (comm_ops_val, _blinds) = self.combined_poly.commit(gens, None);
+    let (comm_ops_val, _blinds) = Hyrax::<G>::commit(&self.combined_poly, (gens.clone(), None)).unwrap();
     CombinedTableCommitment { comm_ops_val }
   }
 
@@ -266,16 +266,14 @@ impl<G: CurveGroup, const C: usize> CombinedTableEvalProof<G, C> {
     // decommit the joint polynomial at r_joint
     <Transcript as ProofTranscript<G>>::append_scalar(transcript, b"joint_claim_eval", &eval_joint);
 
-    let (proof_table_eval, _comm_table_eval) = PolyEvalProof::prove(
-      joint_poly,
-      None,
+    let (proof_table_eval, _comm_table_eval) = Hyrax::prove(
+      &joint_poly,
+      &Some(eval_joint),
       &r_joint,
-      &eval_joint,
-      None,
-      gens,
+      (None, None, &gens, random_tape),
       transcript,
-      random_tape,
-    );
+    )
+    .unwrap();
 
     proof_table_eval
   }

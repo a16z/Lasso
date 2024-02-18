@@ -2,9 +2,14 @@
 #![allow(clippy::type_complexity)]
 use crate::lasso::densified::DensifiedRepresentation;
 use crate::lasso::surge::{SparsePolyCommitmentGens, SparsePolynomialCommitment};
-use crate::poly::dense_mlpoly::{DensePolynomial, PolyEvalProof};
+use crate::poly::dense_mlpoly::DensePolynomial;
 use crate::poly::identity_poly::IdentityPolynomial;
-use crate::subprotocols::grand_product::{BatchedGrandProductArgument, GrandProductCircuit};
+use crate::subprotocols::hyrax::Hyrax;
+use crate::subprotocols::traits::PolynomialCommitmentScheme;
+use crate::subprotocols::{
+  grand_product::{BatchedGrandProductArgument, GrandProductCircuit},
+  hyrax::PolyEvalProof,
+};
 use crate::subtables::{
   CombinedTableCommitment, CombinedTableEvalProof, SubtableStrategy, Subtables,
 };
@@ -36,8 +41,12 @@ pub struct MemoryCheckingProof<
   proof_hash_layer: HashLayerProof<G, C, M, S>,
 }
 
-impl<G: CurveGroup, const C: usize, const M: usize, S: SubtableStrategy<G::ScalarField, C, M> + Sync>
-  MemoryCheckingProof<G, C, M, S>
+impl<
+    G: CurveGroup,
+    const C: usize,
+    const M: usize,
+    S: SubtableStrategy<G::ScalarField, C, M> + Sync,
+  > MemoryCheckingProof<G, C, M, S>
 where
   [(); S::NUM_SUBTABLES]: Sized,
   [(); S::NUM_MEMORIES]: Sized,
@@ -282,15 +291,18 @@ impl<F: PrimeField> GrandProducts<F> {
     #[cfg(not(feature = "multicore"))]
     let num_ops = 0..dim_i.len();
     let grand_product_input_read = DensePolynomial::new(
-      num_ops.clone().map(|i| {
+      num_ops
+        .clone()
+        .map(|i| {
           // addr is given by dim_i, value is given by eval_table, and ts is given by read_ts
           hash_func(&dim_i[i], &eval_table[dim_i_usize[i]], &read_i[i])
         })
-        .collect::<Vec<F>>()
+        .collect::<Vec<F>>(),
     );
     // write: s hash evaluation => log(s)-variate polynomial
     let grand_product_input_write = DensePolynomial::new(
-      num_ops.map(|i| {
+      num_ops
+        .map(|i| {
           // addr is given by dim_i, value is given by eval_table, and ts is given by write_ts = read_ts + 1
           hash_func(
             &dim_i[i],
@@ -399,16 +411,14 @@ where
       &joint_claim_eval_ops,
     );
 
-    let (proof_ops, _) = PolyEvalProof::prove(
+    let (proof_ops, _) = Hyrax::prove(
       &dense.combined_l_variate_polys,
-      None,
+      &Some(joint_claim_eval_ops),
       &r_joint_ops,
-      &joint_claim_eval_ops,
-      None,
-      &gens.gens_combined_l_variate,
+      (None, None, &gens.gens_combined_l_variate, random_tape),
       transcript,
-      random_tape,
-    );
+    )
+    .unwrap();
 
     <Transcript as ProofTranscript<G>>::append_scalars(transcript, b"claim_evals_mem", &eval_final);
     let challenges_mem = <Transcript as ProofTranscript<G>>::challenge_vector(
@@ -437,16 +447,14 @@ where
       &joint_claim_eval_mem,
     );
 
-    let (proof_mem, _) = PolyEvalProof::prove(
+    let (proof_mem, _) = Hyrax::prove(
       &dense.combined_log_m_variate_polys,
-      None,
+      &Some(joint_claim_eval_mem),
       &r_joint_mem,
-      &joint_claim_eval_mem,
-      None,
-      &gens.gens_combined_log_m_variate,
+      (None, None, &gens.gens_combined_log_m_variate, random_tape),
       transcript,
-      random_tape,
-    );
+    )
+    .unwrap();
 
     HashLayerProof {
       eval_dim,

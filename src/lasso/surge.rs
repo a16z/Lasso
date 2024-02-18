@@ -4,9 +4,12 @@
 
 use crate::lasso::densified::DensifiedRepresentation;
 use crate::lasso::memory_checking::MemoryCheckingProof;
-use crate::poly::dense_mlpoly::{DensePolynomial, PolyCommitment, PolyCommitmentGens};
+use crate::poly::dense_mlpoly::DensePolynomial;
 use crate::poly::eq_poly::EqPolynomial;
-use crate::subprotocols::sumcheck::SumcheckInstanceProof;
+use crate::subprotocols::{
+  hyrax::{PolyCommitment, PolyCommitmentGens},
+  sumcheck::SumcheckInstanceProof,
+};
 use crate::subtables::{
   CombinedTableCommitment, CombinedTableEvalProof, SubtableStrategy, Subtables,
 };
@@ -22,6 +25,8 @@ use ark_std::log2;
 use merlin::Transcript;
 use std::marker::Sync;
 
+// Public Params
+#[derive(Clone)]
 pub struct SparsePolyCommitmentGens<G> {
   pub gens_combined_l_variate: PolyCommitmentGens<G>,
   pub gens_combined_log_m_variate: PolyCommitmentGens<G>,
@@ -89,6 +94,8 @@ struct PrimarySumcheck<G: CurveGroup, const ALPHA: usize> {
   proof_derefs: CombinedTableEvalProof<G, ALPHA>,
 }
 
+// TODO Implement trait interface for this:
+// DensifiedRepresentation ->
 #[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct SparsePolynomialEvaluationProof<
   G: CurveGroup,
@@ -103,8 +110,12 @@ pub struct SparsePolynomialEvaluationProof<
   memory_check: MemoryCheckingProof<G, C, M, S>,
 }
 
-impl<G: CurveGroup, const C: usize, const M: usize, S: SubtableStrategy<G::ScalarField, C, M> + Sync>
-  SparsePolynomialEvaluationProof<G, C, M, S>
+impl<
+    G: CurveGroup,
+    const C: usize,
+    const M: usize,
+    S: SubtableStrategy<G::ScalarField, C, M> + Sync,
+  > SparsePolynomialEvaluationProof<G, C, M, S>
 where
   [(); S::NUM_SUBTABLES]: Sized,
   [(); S::NUM_MEMORIES]: Sized,

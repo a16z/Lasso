@@ -1,17 +1,21 @@
 #![allow(dead_code)]
 
+use std::cmp::Ordering;
+use std::ops::{AddAssign, Index, IndexMut, Mul, MulAssign};
+
 use super::commitments::{Commitments, MultiCommitGens};
 use crate::utils::gaussian_elimination::gaussian_elimination;
 use crate::utils::transcript::{AppendToTranscript, ProofTranscript};
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_serialize::*;
+use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 // ax^2 + bx + c stored as vec![c,b,a]
 // ax^3 + bx^2 + cx + d stored as vec![d,c,b,a]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UniPoly<F> {
-  coeffs: Vec<F>,
+  pub coeffs: Vec<F>,
 }
 
 // ax^2 + bx + c stored as vec![c,a]
@@ -31,6 +35,10 @@ impl<F: PrimeField> UniPoly<F> {
     UniPoly {
       coeffs: Self::vandermonde_interpolation(evals),
     }
+  }
+
+  fn zero() -> Self {
+    Self::from_coeff(Vec::new())
   }
 
   fn vandermonde_interpolation(evals: &[F]) -> Vec<F> {
@@ -53,12 +61,47 @@ impl<F: PrimeField> UniPoly<F> {
     gaussian_elimination(&mut vandermonde)
   }
 
+  /// Divide self by another polynomial, and returns the
+  /// quotient and remainder.
+  pub fn divide_with_q_and_r(&self, divisor: &Self) -> Option<(Self, Self)> {
+    if self.is_zero() {
+      Some((Self::zero(), Self::zero()))
+    } else if divisor.is_zero() {
+      None
+    } else if self.degree() < divisor.degree() {
+      Some((Self::zero(), self.clone()))
+    } else {
+      // Now we know that self.degree() >= divisor.degree();
+      let mut quotient = vec![F::ZERO; self.degree() - divisor.degree() + 1];
+      let mut remainder: Self = self.clone();
+      // Can unwrap here because we know self is not zero.
+      let divisor_leading_inv = divisor.leading_coefficient().unwrap().inverse().unwrap();
+      while !remainder.is_zero() && remainder.degree() >= divisor.degree() {
+        let cur_q_coeff = *remainder.leading_coefficient().unwrap() * divisor_leading_inv;
+        let cur_q_degree = remainder.degree() - divisor.degree();
+        quotient[cur_q_degree] = cur_q_coeff;
+
+        for (i, div_coeff) in divisor.coeffs.iter().enumerate() {
+          remainder.coeffs[cur_q_degree + i] -= &(cur_q_coeff * div_coeff);
+        }
+        while let Some(true) = remainder.coeffs.last().map(|c| c == &F::ZERO) {
+          remainder.coeffs.pop();
+        }
+      }
+      Some((Self::from_coeff(quotient), remainder))
+    }
+  }
+
   pub fn degree(&self) -> usize {
     self.coeffs.len() - 1
   }
 
   pub fn as_vec(&self) -> Vec<F> {
     self.coeffs.clone()
+  }
+
+  pub fn len(&self) -> usize {
+    self.coeffs.len()
   }
 
   pub fn eval_at_zero(&self) -> F {
@@ -89,6 +132,101 @@ impl<F: PrimeField> UniPoly<F> {
 
   pub fn commit<G: CurveGroup<ScalarField = F>>(&self, gens: &MultiCommitGens<G>, blind: &F) -> G {
     Commitments::batch_commit(&self.coeffs, blind, gens)
+  }
+
+  fn is_zero(&self) -> bool {
+    self.coeffs.is_empty() || self.coeffs.iter().all(|c| c == &F::zero())
+  }
+
+  fn truncate_leading_zeros(&mut self) {
+    while self.coeffs.last().map_or(false, |c| c == &F::zero()) {
+      self.coeffs.pop();
+    }
+  }
+
+  fn leading_coefficient(&self) -> Option<&F> {
+    self.coeffs.last()
+  }
+}
+
+impl<F: PrimeField> AddAssign<&F> for UniPoly<F> {
+  fn add_assign(&mut self, rhs: &F) {
+    #[cfg(feature = "multicore")]
+    let iter = self.coeffs.par_iter_mut();
+    #[cfg(not(feature = "multicore"))]
+    let iter = self.coeffs.iter_mut();
+    iter.for_each(|c| *c += rhs);
+  }
+}
+
+impl<F: PrimeField> MulAssign<&F> for UniPoly<F> {
+  fn mul_assign(&mut self, rhs: &F) {
+    #[cfg(feature = "multicore")]
+    let iter = self.coeffs.par_iter_mut();
+    #[cfg(not(feature = "multicore"))]
+    let iter = self.coeffs.iter_mut();
+    iter.for_each(|c| *c *= rhs);
+  }
+}
+
+impl<F: PrimeField> Mul<F> for UniPoly<F> {
+  type Output = Self;
+
+  fn mul(self, rhs: F) -> Self {
+    #[cfg(feature = "multicore")]
+    let iter = self.coeffs.into_par_iter();
+    #[cfg(not(feature = "multicore"))]
+    let iter = self.coeffs.iter();
+    Self::from_coeff(iter.map(|c| c * rhs).collect::<Vec<_>>())
+  }
+}
+
+impl<F: PrimeField> Mul<&F> for UniPoly<F> {
+  type Output = Self;
+
+  fn mul(self, rhs: &F) -> Self {
+    #[cfg(feature = "multicore")]
+    let iter = self.coeffs.into_par_iter();
+    #[cfg(not(feature = "multicore"))]
+    let iter = self.coeffs.iter();
+    Self::from_coeff(iter.map(|c| c * rhs).collect::<Vec<_>>())
+  }
+}
+
+impl<F: PrimeField> AddAssign<&Self> for UniPoly<F> {
+  fn add_assign(&mut self, rhs: &Self) {
+    let ordering = self.coeffs.len().cmp(&rhs.coeffs.len());
+    #[allow(clippy::disallowed_methods)]
+    for (lhs, rhs) in self.coeffs.iter_mut().zip(&rhs.coeffs) {
+      *lhs += rhs;
+    }
+    if matches!(ordering, Ordering::Less) {
+      self
+        .coeffs
+        .extend(rhs.coeffs[self.coeffs.len()..].iter().cloned());
+    }
+  }
+}
+
+impl<F: PrimeField> AsRef<Vec<F>> for UniPoly<F> {
+  fn as_ref(&self) -> &Vec<F> {
+    &self.coeffs
+  }
+}
+
+impl<F: PrimeField> Index<usize> for UniPoly<F> {
+  type Output = F;
+
+  #[inline(always)]
+  fn index(&self, _index: usize) -> &F {
+    &(self.coeffs[_index])
+  }
+}
+
+impl<F: PrimeField> IndexMut<usize> for UniPoly<F> {
+  #[inline(always)]
+  fn index_mut(&mut self, index: usize) -> &mut F {
+    &mut (self.coeffs[index])
   }
 }
 

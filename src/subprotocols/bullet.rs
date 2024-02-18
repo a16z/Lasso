@@ -20,7 +20,7 @@ use ark_ec::VariableBaseMSM;
 #[cfg(not(feature = "ark-msm"))]
 use super::super::msm::VariableBaseMSM;
 
-#[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct BulletReductionProof<G: CurveGroup> {
   L_vec: Vec<G>,
   R_vec: Vec<G>,

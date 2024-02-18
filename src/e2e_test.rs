@@ -5,13 +5,10 @@ use crate::{
   lasso::{
     densified::DensifiedRepresentation,
     surge::{SparsePolyCommitmentGens, SparsePolynomialEvaluationProof},
-  },
-  subtables::{
+  }, subprotocols::{traits::PolynomialCommitmentScheme, hyrax::Hyrax}, subtables::{
     and::AndSubtableStrategy, lt::LTSubtableStrategy, range_check::RangeCheckSubtableStrategy,
     SubtableStrategy,
-  },
-  utils::math::Math,
-  utils::random::RandomTape,
+  }, utils::math::Math, utils::random::RandomTape
 };
 
 macro_rules! e2e_test {
@@ -36,7 +33,7 @@ macro_rules! e2e_test {
         DensifiedRepresentation::from_lookup_indices(&nz, log_M);
       let gens =
         SparsePolyCommitmentGens::<$G>::new(b"gens_sparse_poly", C, $sparsity, NUM_MEMORIES, log_M);
-      let commitment = dense.commit::<$G>(&gens);
+      let commitment = dense.commit(&gens);
 
       let r: Vec<$F> = gen_random_point(log_s);
 
@@ -61,6 +58,7 @@ macro_rules! e2e_test {
   };
 }
 
+/// Hyrax
 e2e_test!(
   prove_4d_lt,
   LTSubtableStrategy,

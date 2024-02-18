@@ -136,6 +136,7 @@ impl<G: CurveGroup> DotProductProof<G> {
   }
 }
 
+#[derive(Clone)]
 pub struct DotProductProofGens<G> {
   n: usize,
   pub gens_n: MultiCommitGens<G>,
@@ -149,7 +150,7 @@ impl<G: CurveGroup> DotProductProofGens<G> {
   }
 }
 
-#[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DotProductProofLog<G: CurveGroup> {
   bullet_reduction_proof: BulletReductionProof<G>,
   delta: G,

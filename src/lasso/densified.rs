@@ -3,6 +3,8 @@ use ark_ff::PrimeField;
 
 use super::surge::{SparsePolyCommitmentGens, SparsePolynomialCommitment};
 use crate::poly::dense_mlpoly::DensePolynomial;
+use crate::subprotocols::hyrax::Hyrax;
+use crate::subprotocols::traits::PolynomialCommitmentScheme;
 use crate::utils::math::Math;
 
 pub struct DensifiedRepresentation<F: PrimeField, const C: usize> {
@@ -74,17 +76,22 @@ impl<F: PrimeField, const C: usize> DensifiedRepresentation<F, C> {
     }
   }
 
+  //TODO: make this a commitment generic over
   #[tracing::instrument(skip_all, name = "DensifiedRepresentation.commit")]
   pub fn commit<G: CurveGroup<ScalarField = F>>(
     &self,
     gens: &SparsePolyCommitmentGens<G>,
   ) -> SparsePolynomialCommitment<G> {
-    let (l_variate_polys_commitment, _) = self
-      .combined_l_variate_polys
-      .commit(&gens.gens_combined_l_variate, None);
-    let (log_m_variate_polys_commitment, _) = self
-      .combined_log_m_variate_polys
-      .commit(&gens.gens_combined_log_m_variate, None);
+    let (l_variate_polys_commitment, _) = Hyrax::<G>::commit(
+      &self.combined_l_variate_polys,
+      (gens.gens_combined_l_variate.clone(), None),
+    )
+    .unwrap();
+    let (log_m_variate_polys_commitment, _) = Hyrax::<G>::commit(
+      &self.combined_log_m_variate_polys,
+      (gens.gens_combined_log_m_variate.clone(), None),
+    )
+    .unwrap();
 
     SparsePolynomialCommitment {
       l_variate_polys_commitment,
