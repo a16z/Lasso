@@ -1,0 +1,9 @@
+[package]
+name = "lasso"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jolt-core = { path = "../../jolt-core" }
+ark-bn254 = "0.4.0"
+merlin = "3.0.0"

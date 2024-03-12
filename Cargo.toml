@@ -26,6 +26,7 @@ members = [
     "compiler",
     "examples/fibonacci",
     "examples/hash",
+    "examples/lasso",
     "integration-tests", 
 ]
 
