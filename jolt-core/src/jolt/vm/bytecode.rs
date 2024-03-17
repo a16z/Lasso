@@ -398,17 +398,20 @@ impl<F: PrimeField, G: CurveGroup<ScalarField = F>> BytecodePolynomials<F, G> {
             assert!(instruction.address % BYTES_PER_INSTRUCTION == 0);
             instruction.address -= RAM_START_ADDRESS as usize;
             instruction.address /= BYTES_PER_INSTRUCTION;
+            // Account for no-op instruction prepended to bytecode
+            instruction.address += 1;
         }
         for instruction in trace.iter_mut() {
             assert!(instruction.address >= RAM_START_ADDRESS as usize);
             assert!(instruction.address % BYTES_PER_INSTRUCTION == 0);
             instruction.address -= RAM_START_ADDRESS as usize;
             instruction.address /= BYTES_PER_INSTRUCTION;
+            // Account for no-op instruction prepended to bytecode
+            instruction.address += 1;
         }
 
-        // Bytecode: Add single no_op instruction at adddress | ELF + 1 |
-        let no_op_address = bytecode.last().unwrap().address + 1;
-        bytecode.push(ELFRow::no_op(no_op_address));
+        // Bytecode: Prepend a single no-op instruction
+        bytecode.insert(0, ELFRow::no_op(0));
 
         // Bytecode: Pad to nearest power of 2
         for _ in bytecode.len()..bytecode.len().next_power_of_two() {
@@ -417,15 +420,15 @@ impl<F: PrimeField, G: CurveGroup<ScalarField = F>> BytecodePolynomials<F, G> {
 
         // Trace: Pad to nearest power of 2
         for _trace_i in trace.len()..trace.len().next_power_of_two() {
-            // All padded elements of the trace point at the no_op row of the ELF
-            trace.push(ELFRow::no_op(no_op_address));
+            // All padded elements of the trace point at prepended no-op instruction
+            trace.push(ELFRow::no_op(0));
         }
     }
 
     /// Computes the maximum number of group generators needed to commit to bytecode
     /// polynomials using Hyrax, given the maximum bytecode size and maximum trace length.
     pub fn num_generators(max_bytecode_size: usize, max_trace_length: usize) -> usize {
-        // Account for no-op appended to end of bytecode
+        // Account for no-op prepended to bytecode
         let max_bytecode_size = (max_bytecode_size + 1).next_power_of_two();
         let max_trace_length = max_trace_length.next_power_of_two();
 
