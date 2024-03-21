@@ -101,33 +101,27 @@ impl<F: ff::PrimeField<Repr=[u8;32]>> JoltCircuit<F> {
 
     // // Allocate memory
     let mut step_z: Vec<Vec<F>> = Vec::with_capacity(TRACE_LEN);
-    // for _ in 0..TRACE_LEN {
-    //     let step_i: Vec<F> = Vec::with_capacity(self.inputs.len());
-    //     step_z.push(step_i);
-    // }
 
-    // // Allocate the inputs 
-    // step_z.par_iter_mut().enumerate().for_each(|(i, step)| {
-
-    // });
-
-    // Allocate the aux
     let all_step_z = (0..TRACE_LEN).into_par_iter().map(|i| {
       let mut step_z = Vec::with_capacity(TRACE_LEN); 
-      let program_counter = if i > 0 && self.inputs[0][i] == F::from(0) {
-          F::from(0)
-      } else {
-          self.inputs[0][i] * F::from(4u64) + F::from(RAM_START_ADDRESS)
-      };
-      step_z.extend([F::from(1), F::from(0), F::from(0), F::from(i as u64), program_counter]);
+
+      // TODO(arasuarun): might need a case to see if (i > 0 && self.inputs[0][i] == F::from(0))
+      let (output_pc, program_counter) = (self.inputs[0].get(i+1).copied().unwrap_or(self.inputs[0][i]), self.inputs[0][i]);
+
+      // push (1, output counter, output pc, input counter, input pc)
+      step_z.extend([F::from(1), F::from(i as u64 +1), output_pc, F::from(i as u64), program_counter]);
+
+      // fill in remaining inputs from jolt
       for j in 0..self.inputs.len() {
           let max_k = (self.inputs[j].len() - i - 1) / TRACE_LEN;
           for k in 0..=max_k {
               step_z.push(self.inputs[j][i + k * TRACE_LEN]);
           }
       }
-
+      
+      // Allocate the aux
       R1CSBuilder::calculate_aux::<F>(&mut step_z);
+
       step_z 
     })
     .collect::<Vec<Vec<F>>>();

@@ -10,7 +10,7 @@ const N_FLAGS: usize = 17;
 const W: usize = 32;
 const LOG_M: usize = 16; 
 const PROG_START_ADDR: usize = 2147483664;
-const RAM_START_ADDRESS: usize = 0x80000000; 
+const RAM_START_ADDRESS: u64 = 0x80000000; 
 const MEMORY_ADDRESS_OFFSET: usize = 0x80000000 - 0x20; 
 // "memreg ops per step" 
 const MOPS: usize = 7;
@@ -333,7 +333,8 @@ impl R1CSBuilder {
             signal _y <== if_else()([op_flags[1], rs2_val, immediate]);
             signal y <== if_else()([1-is_advice_instr, lookup_output, _y]);
          */
-        let x = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 0), rs1_val, PC);
+        // let x = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 0), rs1_val, PC * 4 + RAM_START_ADDRESS); // unmap PC
+        let x = R1CSBuilder::if_else(instance, smallvec![(GET_INDEX(InputType::OpFlags, 0), 1)], smallvec![(rs1_val, 1)], smallvec![(PC, 4), (0, RAM_START_ADDRESS as i64)]); // unmap PC
         let _y = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 1), rs2_val, immediate);
         let y = R1CSBuilder::if_else_simple(instance, is_advice_instr, _y, GET_INDEX(InputType::LookupOutput, 0)); 
 
@@ -490,7 +491,8 @@ impl R1CSBuilder {
             instance, 
             smallvec![(rd, 1)], 
             smallvec![(is_jump_instr, 1)], 
-            smallvec![(rd_val, 1), (PC, -1), (0, -4)], 
+            //smallvec![(rd_val, 1), (PC, -4), (0, -(RAM_START_ADDRESS as i64) + 4)],  // work with unmapped PC
+            smallvec![(PC, 4), (0, (RAM_START_ADDRESS as i64) + 4), (rd_val, -1)],  // work with unmapped PC
         ); 
         
         /* output_state[STEP_NUM_IDX()] <== input_state[STEP_NUM_IDX()]+1; */
@@ -520,19 +522,25 @@ impl R1CSBuilder {
             output_state[PC_IDX()] <== next_pc_j_b;
         */
         let is_branch_times_lookup_output = R1CSBuilder::multiply(instance, smallvec![(is_branch_instr, 1)], smallvec![(GET_INDEX(InputType::LookupOutput, 0), 1)]); 
-        let next_pc_j = R1CSBuilder::if_else(instance, smallvec![(is_jump_instr, 1)], smallvec![(PC, 1), (0, 4)], smallvec![(GET_INDEX(InputType::LookupOutput, 0), 1)]);
-        let next_pc_j_b = R1CSBuilder::if_else(instance, smallvec![(is_branch_times_lookup_output, 1)], smallvec![(next_pc_j, 1)], smallvec![(PC, 1), (immediate_signed, 1)]);
+        let next_pc_j = R1CSBuilder::if_else(instance, smallvec![(is_jump_instr, 1)], smallvec![(PC, 4), (0, RAM_START_ADDRESS as i64 + 4)], smallvec![(GET_INDEX(InputType::LookupOutput, 0), 1)]);
+        let next_pc_j_b = R1CSBuilder::if_else(instance, smallvec![(is_branch_times_lookup_output, 1)], smallvec![(next_pc_j, 1)], smallvec![(PC, 4), (0, RAM_START_ADDRESS as i64), (immediate_signed, 1)]);
 
-        R1CSBuilder::eq(instance, 
-            smallvec![(next_pc_j_b, 1)], 
-            GET_INDEX(InputType::OutputState, PC_IDX), 
-            true, 
+        let out_pc_idx = GET_INDEX(InputType::OutputState, PC_IDX); 
+        // TODO(arasuarun): re-enforce this after fixing the padded PC issue
+        /* 
+        // output_pc * (map(output_pc) - next_pc_j_b) === 0
+        R1CSBuilder::constr_abc(instance, 
+            smallvec![(out_pc_idx, 4), (0, RAM_START_ADDRESS as i64), (next_pc_j_b, -1)], 
+            // smallvec![(out_pc_idx, 1)], 
+            smallvec![ONE], 
+            smallvec![], 
         );
+        */
 
         R1CSBuilder::move_constant_to_end(instance);
     }
 
-  #[tracing::instrument(name = "R1CSBuilder::calculate_aux", skip_all)]
+    #[tracing::instrument(name = "R1CSBuilder::calculate_aux", skip_all)]
     pub fn calculate_aux<F: PrimeField>(inputs: &mut Vec<F>) {
         // Parse the input indices 
         let opcode = GET_INDEX(InputType::ProgVRW, 0);
@@ -574,13 +582,13 @@ impl R1CSBuilder {
         let rs1_val = GET_INDEX(InputType::MemregVReads, 0);
         let rs2_val = GET_INDEX(InputType::MemregVReads, 1);
 
-        // 2. let x = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 0), rs1_val, PC);
+        // 2. let x = R1CSBuilder::if_else(instance, smallvec![(GET_INDEX(InputType::OpFlags, 0), 1)], smallvec![(rs1_val, 1)], smallvec![(PC, 4), (0, RAM_START_ADDRESS)]); // unmap PC
         let x = inputs.len(); 
         inputs.push(
             if inputs[GET_INDEX(InputType::OpFlags, 0)] == 0.into() {
                 inputs[rs1_val]
             } else {
-                inputs[PC]
+                inputs[PC] * F::from(4) + F::from(RAM_START_ADDRESS)
             }
         );
 
@@ -679,30 +687,26 @@ impl R1CSBuilder {
         let is_branch_times_lookup_output = inputs.len();
         inputs.push(inputs[is_branch_instr] * inputs[GET_INDEX(InputType::LookupOutput, 0)]);
 
-        // 17. let next_pc_j = R1CSBuilder::if_else(instance, smallvec![(is_jump_instr, 1)], smallvec![(PC, 1), (0, 4)], smallvec![(GET_INDEX(InputType::LookupOutput, 0), 1)]);
+        // 17. let next_pc_j = R1CSBuilder::if_else(instance, smallvec![(is_jump_instr, 1)], smallvec![(PC, 4), (0, RAM_START_ADDRESS + 4)], smallvec![(GET_INDEX(InputType::LookupOutput, 0), 1)]);
         let next_pc_j = inputs.len();
         inputs.push(
             if inputs[is_jump_instr] == 0.into() {
-                inputs[PC] + F::from(4)
+                inputs[PC] * F::from(4) + F::from(RAM_START_ADDRESS + 4)
             } else {
                 inputs[GET_INDEX(InputType::LookupOutput, 0)]
             }
         );
 
-        // 18. let next_pc_j_b = R1CSBuilder::if_else(instance, smallvec![(is_branch_times_lookup_output, 1)], smallvec![(next_pc_j, 1)], smallvec![(PC, 1), (immediate_signed, 1)]);
+
+        // 18. let next_pc_j_b = R1CSBuilder::if_else(instance, smallvec![(is_branch_times_lookup_output, 1)], smallvec![(next_pc_j, 1)], smallvec![(PC, 4), (0, RAM_START_ADDRESS), (immediate_signed, 1)]);
         let next_pc_j_b = inputs.len();
         inputs.push(
             if inputs[is_branch_times_lookup_output] == 0.into() {
                 inputs[next_pc_j]
             } else {
-                inputs[PC] + inputs[immediate_signed]
+                inputs[PC] * F::from(4) + F::from(RAM_START_ADDRESS) + inputs[immediate_signed]
             }
         );
-
-
-        // Assign outputs: (step counter, PC)
-        inputs[1] = inputs[3]+F::ONE;  
-        inputs[2] = inputs[next_pc_j_b];
     }
 
     fn move_constant_to_end(&mut self) {
