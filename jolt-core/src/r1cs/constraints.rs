@@ -3,15 +3,14 @@
 use ark_ff::PrimeField; 
 use smallvec::{smallvec, SmallVec};
 use rayon::prelude::*;
+use common::constants::{RAM_START_ADDRESS, RAM_WITNESS_OFFSET};
 
 /* Compiler Variables */
 const C: usize = 4; 
 const N_FLAGS: usize = 17; 
 const W: usize = 32;
 const LOG_M: usize = 16; 
-const PROG_START_ADDR: usize = 2147483664;
-const RAM_START_ADDRESS: usize = 0x80000000; 
-const MEMORY_ADDRESS_OFFSET: usize = 0x80000000 - 0x20; 
+const MEMORY_ADDRESS_OFFSET: usize = (RAM_START_ADDRESS - RAM_WITNESS_OFFSET) as usize; 
 // "memreg ops per step" 
 const MOPS: usize = 7;
 /* End of Compiler Variables */
@@ -330,19 +329,23 @@ impl R1CSBuilder {
         let rs2_val = GET_INDEX(InputType::MemregVReads, 1);
 
         /*
-            signal x <== if_else()([op_flags[0], rs1_val, PC]); // TODO: change this for virtual instructions
-            signal _y <== if_else()([op_flags[1], rs2_val, immediate]);
-            signal y <== if_else()([1-is_advice_instr, lookup_output, _y]);
-         */
-        let x = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 0), rs1_val, PC);
-        let _y = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 1), rs2_val, immediate);
-        let y = R1CSBuilder::if_else_simple(instance, is_advice_instr, _y, GET_INDEX(InputType::LookupOutput, 0)); 
-
-        /*
             signal mem_v_bytes[MOPS()-3] <== subarray(3, MOPS()-3, MOPS())(memreg_v_writes);
             signal load_or_store_value <== combine_chunks_le(MOPS()-3, 8)(mem_v_bytes); 
         */
         let load_or_store_value = R1CSBuilder::combine_le(instance, GET_INDEX(InputType::MemregVWrites, 3), 8, MOPS-3); 
+
+        /*
+            signal _x <== if_else()([op_flags[0], rs1_val, PC]); // TODO: change this for virtual instructions
+            signal x <== if_else()([is_load_inst + is_store_instr, _x, 0]);
+            signal _y <== if_else()([op_flags[1], rs2_val, immediate]);
+            signal _y <== if_else()([is_store_instr, _y, load_or_store_value]);
+            signal y <== if_else()([1-is_advice_instr, lookup_output, _y]);
+         */
+        let _x = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 0), rs1_val, PC);
+        let x = R1CSBuilder::if_else(instance, smallvec![(is_load_instr, 1), (is_store_instr, 1)], smallvec![(_x, 1)], smallvec![]);
+        let _y = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 1), rs2_val, immediate);
+        let _y = R1CSBuilder::if_else_simple(instance, is_load_instr, _y, load_or_store_value);
+        let y = R1CSBuilder::if_else_simple(instance, is_advice_instr, _y, GET_INDEX(InputType::LookupOutput, 0)); 
 
         /* 
             signal immediate_signed <== if_else()([sign_imm_flag, immediate, -ALL_ONES() + immediate - 1]);
@@ -371,7 +374,7 @@ impl R1CSBuilder {
         }
 
         // is_store_instr * (load_or_store_value - rs2_val) === 0;
-        R1CSBuilder::constr_abc(instance, smallvec![(is_store_instr, 1)], smallvec![(load_or_store_value, 1), (rs2_val, -1)], smallvec![]);
+        R1CSBuilder::constr_abc(instance, smallvec![(is_store_instr, 1)], smallvec![(load_or_store_value, 1), (GET_INDEX(InputType::LookupOutput, 0), -1)], smallvec![]);
 
 
         /* Create the lookup query 
@@ -414,13 +417,13 @@ impl R1CSBuilder {
             smallvec![]
         );
 
-    /* Verify the chunks of x and y for concat instructions. 
-        signal combined_x_chunks <== combine_chunks(C(), L_CHUNK())(chunks_x);
-        (combined_x_chunks - x) * is_concat === 0; 
+        /* Verify the chunks of x and y for concat instructions. 
+            signal combined_x_chunks <== combine_chunks(C(), L_CHUNK())(chunks_x);
+            (combined_x_chunks - x) * is_concat === 0; 
 
-        Note that a wire value need not be assigned for combined x_chunks. 
-        Repeat for y. 
-    */
+            Note that a wire value need not be assigned for combined x_chunks. 
+            Repeat for y. 
+        */
         R1CSBuilder::constr_abc(
             instance,  
             concat_constraint_vecs(
@@ -480,7 +483,7 @@ impl R1CSBuilder {
             rd_test_jump.in <== [rd, is_jump_instr, (rd_val - (prog_a_rw + 4))]; 
         */
         let rd_val = GET_INDEX(InputType::MemregVWrites, 2);
-        R1CSBuilder::constr_abc(instance, smallvec![(is_load_instr, 1)], smallvec![(rd_val, 1), (load_or_store_value, -1)], smallvec![]);
+        R1CSBuilder::constr_abc(instance, smallvec![(is_load_instr, 1)], smallvec![(rd_val, 1), (GET_INDEX(InputType::LookupOutput, 0), -1)], smallvec![]);
         R1CSBuilder::constr_prod_0(
             instance, 
             smallvec![(rd, 1)], 
@@ -533,7 +536,6 @@ impl R1CSBuilder {
         R1CSBuilder::move_constant_to_end(instance);
     }
 
-  #[tracing::instrument(name = "R1CSBuilder::calculate_aux", skip_all)]
     pub fn calculate_aux<F: PrimeField>(inputs: &mut Vec<F>) {
         // Parse the input indices 
         let opcode = GET_INDEX(InputType::ProgVRW, 0);
@@ -575,39 +577,7 @@ impl R1CSBuilder {
         let rs1_val = GET_INDEX(InputType::MemregVReads, 0);
         let rs2_val = GET_INDEX(InputType::MemregVReads, 1);
 
-        // 2. let x = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 0), rs1_val, PC);
-        let x = inputs.len(); 
-        inputs.push(
-            if inputs[GET_INDEX(InputType::OpFlags, 0)].is_zero() {
-                inputs[rs1_val]
-            } else {
-                inputs[PC]
-            }
-        );
-
-
-        // 3. let _y = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 1), rs2_val, immediate);
-        let _y = inputs.len();
-        inputs.push(
-            if inputs[GET_INDEX(InputType::OpFlags, 1)].is_zero() {
-                inputs[rs2_val]
-            } else {
-                inputs[immediate]
-            }
-        );
-
-
-        // 4. let y = R1CSBuilder::if_else_simple(instance, is_advice_instr, _y, GET_INDEX(InputType::LookupOutput, 0));
-        let y = inputs.len();
-        inputs.push(
-            if inputs[is_advice_instr].is_zero() {
-                inputs[_y]
-            } else {
-                inputs[GET_INDEX(InputType::LookupOutput, 0)]
-            }
-        );
-
-        // 5. let load_or_store_value = R1CSBuilder::combine_le(instance, GET_INDEX(InputType::MemregVWrites, 3), 8, MOPS-3);
+        // 2. let load_or_store_value = R1CSBuilder::combine_le(instance, GET_INDEX(InputType::MemregVWrites, 3), 8, MOPS-3);
         let load_or_store_value = inputs.len();
         inputs.push({
             let mut val = F::zero(); 
@@ -618,7 +588,60 @@ impl R1CSBuilder {
             val 
         });
 
-        // 6. let immediate_signed = R1CSBuilder::if_else(instance, smallvec![(sign_imm_flag, 1)], smallvec![(immediate, 1)], smallvec![(immediate, 1), (0, -ALL_ONES - 1)]);
+        // 3. let _x = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 0), rs1_val, PC);
+        let _x = inputs.len(); 
+        inputs.push(
+            if inputs[GET_INDEX(InputType::OpFlags, 0)].is_zero() {
+                inputs[rs1_val]
+            } else {
+                inputs[PC]
+            }
+        );
+
+        // 4.let x = R1CSBuilder::if_else(instance, smallvec![(is_load_instr, 1), (is_store_instr, 1)], smallvec![(_x, 1)], smallvec![]);
+        let x = inputs.len(); 
+        inputs.push(
+            if (inputs[is_store_instr] + inputs[is_load_instr]).is_zero() {
+                inputs[_x]
+            } else {
+                F::zero()
+            }
+        );
+
+
+        // 5. let _y = R1CSBuilder::if_else_simple(instance, GET_INDEX(InputType::OpFlags, 1), rs2_val, immediate);
+        let _y = inputs.len();
+        inputs.push(
+            if inputs[GET_INDEX(InputType::OpFlags, 1)].is_zero() {
+                inputs[rs2_val]
+            } else {
+                inputs[immediate]
+            }
+        );
+
+
+        // 6. let _y = R1CSBuilder::if_else_simple(instance, is_load_instr, _y, load_or_store_value);
+        inputs.push(
+            if inputs[is_load_instr].is_zero() {
+                inputs[_y]
+            } else {
+                inputs[load_or_store_value]
+            }
+        );
+        let _y = inputs.len() - 1;
+
+
+        // 7. let y = R1CSBuilder::if_else_simple(instance, is_advice_instr, _y, GET_INDEX(InputType::LookupOutput, 0));
+        let y = inputs.len();
+        inputs.push(
+            if inputs[is_advice_instr].is_zero() {
+                inputs[_y]
+            } else {
+                inputs[GET_INDEX(InputType::LookupOutput, 0)]
+            }
+        );
+
+        // 8. let immediate_signed = R1CSBuilder::if_else(instance, smallvec![(sign_imm_flag, 1)], smallvec![(immediate, 1)], smallvec![(immediate, 1), (0, -ALL_ONES - 1)]);
         let immediate_signed = inputs.len();
         inputs.push(
             if inputs[sign_imm_flag].is_zero() {
@@ -628,7 +651,7 @@ impl R1CSBuilder {
             }
         );
 
-        // 7. let combined_z_chunks = R1CSBuilder::combine_be(instance, GET_INDEX(InputType::ChunksQuery, 0), LOG_M, C);
+        // 9. let combined_z_chunks = R1CSBuilder::combine_be(instance, GET_INDEX(InputType::ChunksQuery, 0), LOG_M, C);
         let combined_z_chunks = inputs.len();
         inputs.push({
             let mut val = F::zero();
@@ -639,21 +662,21 @@ impl R1CSBuilder {
             val 
         });
 
-        // 8. let is_mul_x = R1CSBuilder::multiply(instance, smallvec![(is_mul_instr, 1)], smallvec![(x, 1)]);
+        // 10. let is_mul_x = R1CSBuilder::multiply(instance, smallvec![(is_mul_instr, 1)], smallvec![(x, 1)]);
         let is_mul_x = inputs.len();
         inputs.push(
             inputs[is_mul_instr] * inputs[x]
         );
 
 
-        // 9. let is_mul_xy = R1CSBuilder::multiply(instance, smallvec![(is_mul_x, 1)], smallvec![(y, 1)]);
+        // 11. let is_mul_xy = R1CSBuilder::multiply(instance, smallvec![(is_mul_x, 1)], smallvec![(y, 1)]);
         let is_mul_xy = inputs.len();
         inputs.push(
             inputs[is_mul_x] * inputs[y]
         );
 
 
-        // 10-13. let chunk_y_used_i = R1CSBuilder::if_else_simple(&mut instance, is_shift, GET_INDEX(InputType::ChunksY, i), GET_INDEX(InputType::ChunksY, C-1));
+        // 12-15. let chunk_y_used_i = R1CSBuilder::if_else_simple(&mut instance, is_shift, GET_INDEX(InputType::ChunksY, i), GET_INDEX(InputType::ChunksY, C-1));
         let mut chunk_y_used = [0; C];
         for i in 0..C {
             chunk_y_used[i] = inputs.len(); 
@@ -668,19 +691,19 @@ impl R1CSBuilder {
 
         let rd_val = GET_INDEX(InputType::MemregVWrites, 2);
 
-        // 14. R1CSBuilder::constr_prod_0(smallvec![(rd, 1)], smallvec![(if_update_rd_with_lookup_output, 1)], smallvec![(rd_val, 1), (GET_INDEX(InputType::LookupOutput, 0), -1)], );
+        // 16. R1CSBuilder::constr_prod_0(smallvec![(rd, 1)], smallvec![(if_update_rd_with_lookup_output, 1)], smallvec![(rd_val, 1), (GET_INDEX(InputType::LookupOutput, 0), -1)], );
         let _ = inputs.len();
         inputs.push(inputs[rd] * inputs[if_update_rd_with_lookup_output]); 
 
-        // 15. constr_prod_0[is_jump_instr, rd, rd_val, prog_a_rw, 4]
+        // 17. constr_prod_0[is_jump_instr, rd, rd_val, prog_a_rw, 4]
         let _ = inputs.len();
         inputs.push(inputs[rd] * inputs[is_jump_instr]); 
 
-        // 16. let is_branch_times_lookup_output = R1CSBuilder::multiply(instance, smallvec![(is_branch_instr, 1)], smallvec![(GET_INDEX(InputType::LookupOutput, 0), 1)]); 
+        // 18. let is_branch_times_lookup_output = R1CSBuilder::multiply(instance, smallvec![(is_branch_instr, 1)], smallvec![(GET_INDEX(InputType::LookupOutput, 0), 1)]); 
         let is_branch_times_lookup_output = inputs.len();
         inputs.push(inputs[is_branch_instr] * inputs[GET_INDEX(InputType::LookupOutput, 0)]);
 
-        // 17. let next_pc_j = R1CSBuilder::if_else(instance, smallvec![(is_jump_instr, 1)], smallvec![(PC, 1), (0, 4)], smallvec![(GET_INDEX(InputType::LookupOutput, 0), 1)]);
+        // 19. let next_pc_j = R1CSBuilder::if_else(instance, smallvec![(is_jump_instr, 1)], smallvec![(PC, 1), (0, 4)], smallvec![(GET_INDEX(InputType::LookupOutput, 0), 1)]);
         let next_pc_j = inputs.len();
         inputs.push(
             if inputs[is_jump_instr].is_zero() {
@@ -690,7 +713,7 @@ impl R1CSBuilder {
             }
         );
 
-        // 18. let next_pc_j_b = R1CSBuilder::if_else(instance, smallvec![(is_branch_times_lookup_output, 1)], smallvec![(next_pc_j, 1)], smallvec![(PC, 1), (immediate_signed, 1)]);
+        // 20. let next_pc_j_b = R1CSBuilder::if_else(instance, smallvec![(is_branch_times_lookup_output, 1)], smallvec![(next_pc_j, 1)], smallvec![(PC, 1), (immediate_signed, 1)]);
         let next_pc_j_b = inputs.len();
         inputs.push(
             if inputs[is_branch_times_lookup_output].is_zero() {

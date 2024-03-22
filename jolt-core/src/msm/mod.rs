@@ -277,24 +277,16 @@ fn msm_u64_wnaf<V: VariableBaseMSM>(
         ln_without_floats(bases.len()) + 2
     };
 
-    let _span = trace_span!("msm_u64_wnaf: make digits");
-    let _enter = _span.enter();
     let digits_count = (max_num_bits + c - 1) / c;
     let scalar_digits = scalars
         .into_par_iter()
         .flat_map_iter(|s| make_digits_u64(*s, c, max_num_bits))
         .collect::<Vec<_>>();
     let zero = V::zero();
-    drop(_enter);
-    drop(_span);
 
-    let _span = trace_span!("msm_u64_wnaf: compute window sums");
-    let _enter = _span.enter();
     let window_sums: Vec<_> = (0..digits_count)
         .into_par_iter()
         .map(|i| {
-            let _span = trace_span!("msm_u64_wnaf: compute buckets");
-            let _enter = _span.enter();
             let mut buckets = vec![zero; 1 << c];
             for (digits, base) in scalar_digits.chunks(digits_count).zip(bases) {
                 // digits is the digits thing of the first scalar?
@@ -305,24 +297,16 @@ fn msm_u64_wnaf<V: VariableBaseMSM>(
                     Ordering::Equal => (),
                 }
             }
-            drop(_enter);
-            drop(_span);
 
-            let _span = trace_span!("msm_u64_wnaf: sum buckets");
-            let _enter = _span.enter();
             let mut running_sum = V::zero();
             let mut res = V::zero();
             buckets.iter().rev().for_each(|b| {
                 running_sum += b;
                 res += &running_sum;
             });
-            drop(_enter);
-            drop(_span);
             res
         })
         .collect();
-    drop(_enter);
-    drop(_span);
 
     // We store the sum for the lowest window.
     let lowest = *window_sums.first().unwrap();

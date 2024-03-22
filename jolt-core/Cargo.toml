@@ -61,12 +61,12 @@ tracing-texray = "0.2.0"
 zeroize = { version = "1", default-features = false }
 
 common = { path = "../common" }
-compiler = { path = "../compiler" }
+jolt-sdk = { path = "../jolt-sdk", features = ["std"] }
 
 # witness = { git = "https://github.com/philsippl/circom-witness-rs" }
 witness = { git = "https://github.com/sragss/circom-witness-rs", branch = "non-ruint-eval" }
 ruint = "1.11.1"
-spartan2 = { git = "https://github.com/a16z/Spartan2.git", branch = "feat/remove-circom"}
+spartan2 = { git = "https://github.com/a16z/Spartan2.git", branch = "feat/remove-circom" }
 # spartan2 = { path = "../Spartan2/" }
 ark-bn254 = "0.4.0"
 lazy_static = "1.4.0"
@@ -74,6 +74,7 @@ halo2curves = "0.6.1"
 fixedbitset = "0.5.0"
 thiserror = "1.0.58"
 smallvec = "1.13.1"
+serde = { version = "1.0.*", default-features = false }
 
 [build-dependencies]
 common = { path = "../common" }

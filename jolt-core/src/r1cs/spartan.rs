@@ -623,10 +623,10 @@ mod tests {
 
       let key = UniformSpartanProof::<Fr, G1Projective>::setup_precommitted(&uniform_circuit, 1).unwrap();
 
-      let proof = UniformSpartanProof::<Fr, G1Projective>::prove_precommitted(&key, vec![witness], vec![witness_commitment], &mut transcript).expect("should prove");
+      let proof = UniformSpartanProof::<Fr, G1Projective>::prove_precommitted(&key, vec![witness], &vec![witness_commitment], &mut transcript).expect("should prove");
 
       let mut transcript = Transcript::new(b"test_transcript");
-      proof.verify_precommitted(&key, &[], hyrax_generators, &mut transcript).expect("should verify");
+      proof.verify_precommitted(&key, &[], &hyrax_generators, &mut transcript).expect("should verify");
     }
 
     #[test]
@@ -673,9 +673,9 @@ mod tests {
 
       let key = UniformSpartanProof::<Fr, G1Projective>::setup_precommitted(&uniform_circuit, NUM_STEPS).unwrap();
 
-      let proof = UniformSpartanProof::<Fr, G1Projective>::prove_precommitted(&key, witnesses, witness_commitments, &mut transcript).expect("should prove");
+      let proof = UniformSpartanProof::<Fr, G1Projective>::prove_precommitted(&key, witnesses, &witness_commitments, &mut transcript).expect("should prove");
 
       let mut transcript = Transcript::new(b"test_transcript");
-      proof.verify_precommitted(&key, &[], hyrax_generators, &mut transcript).expect("should verify");
+      proof.verify_precommitted(&key, &[], &hyrax_generators, &mut transcript).expect("should verify");
     }
 }

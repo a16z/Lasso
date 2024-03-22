@@ -85,22 +85,33 @@ where
 // Empty struct to represent that no preprocessing data is used.
 pub struct NoPreprocessing;
 
-pub trait MemoryCheckingProver<F, G, Polynomials, T>
+pub trait MemoryCheckingProver<F, G, Polynomials>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
     Polynomials: BatchablePolynomials<G> + std::marker::Sync,
     Self: std::marker::Sync,
 {
-    type ReadWriteOpenings: StructuredOpeningProof<F, G, Polynomials>;
-    type InitFinalOpenings: StructuredOpeningProof<F, G, Polynomials>;
+    type Preprocessing = NoPreprocessing;
+    type ReadWriteOpenings: StructuredOpeningProof<
+        F,
+        G,
+        Polynomials,
+        Preprocessing = NoPreprocessing,
+    >;
+    type InitFinalOpenings: StructuredOpeningProof<
+        F,
+        G,
+        Polynomials,
+        Preprocessing = Self::Preprocessing,
+    >;
     /// The data associated with each memory slot. A triple (a, v, t) by default.
     type MemoryTuple = (F, F, F);
 
     #[tracing::instrument(skip_all, name = "MemoryCheckingProver::prove_memory_checking")]
     /// Generates a memory checking proof for the given committed polynomials.
     fn prove_memory_checking(
-        preprocessing: &T,
+        preprocessing: &Self::Preprocessing,
         polynomials: &Polynomials,
         batched_polys: &Polynomials::BatchedPolynomials,
         transcript: &mut Transcript,
@@ -148,7 +159,7 @@ where
     #[tracing::instrument(skip_all, name = "MemoryCheckingProver::prove_grand_products")]
     /// Proves the grand products for the memory checking multisets (init, read, write, final).
     fn prove_grand_products(
-        preprocessing: &T,
+        preprocessing: &Self::Preprocessing,
         polynomials: &Polynomials,
         transcript: &mut Transcript,
     ) -> (
@@ -200,7 +211,7 @@ where
     /// with the given leaves. Also returns the corresponding multiset hashes for each memory.
     #[tracing::instrument(skip_all, name = "MemoryCheckingProver::read_write_grand_product")]
     fn read_write_grand_product(
-        _preprocessing: &T,
+        preprocessing: &Self::Preprocessing,
         _polynomials: &Polynomials,
         read_write_leaves: Vec<DensePolynomial<F>>,
     ) -> (BatchedGrandProductCircuit<F>, Vec<F>) {
@@ -223,7 +234,7 @@ where
     /// with the given leaves. Also returns the corresponding multiset hashes for each memory.
     #[tracing::instrument(skip_all, name = "MemoryCheckingProver::init_final_grand_product")]
     fn init_final_grand_product(
-        _preprocessing: &T,
+        preprocessing: &Self::Preprocessing,
         _polynomials: &Polynomials,
         init_final_leaves: Vec<DensePolynomial<F>>,
     ) -> (BatchedGrandProductCircuit<F>, Vec<F>) {
@@ -243,7 +254,7 @@ where
     }
 
     fn interleave_hashes(
-        _preprocessing: &T,
+        _preprocessing: &Self::Preprocessing,
         multiset_hashes: &MultisetHashes<F>,
     ) -> (Vec<F>, Vec<F>) {
         let read_write_hashes = interleave(
@@ -261,7 +272,7 @@ where
     }
 
     fn uninterleave_hashes(
-        _preprocessing: &T,
+        _preprocessing: &Self::Preprocessing,
         read_write_hashes: Vec<F>,
         init_final_hashes: Vec<F>,
     ) -> MultisetHashes<F> {
@@ -290,7 +301,10 @@ where
         }
     }
 
-    fn check_multiset_equality(_preprocessing: &T, multiset_hashes: &MultisetHashes<F>) {
+    fn check_multiset_equality(
+        _preprocessing: &Self::Preprocessing,
+        multiset_hashes: &MultisetHashes<F>,
+    ) {
         let num_memories = multiset_hashes.read_hashes.len();
         assert_eq!(multiset_hashes.final_hashes.len(), num_memories);
         assert_eq!(multiset_hashes.write_hashes.len(), num_memories);
@@ -313,7 +327,7 @@ where
     /// one of each type per memory.
     /// Returns: (interleaved read/write leaves, interleaved init/final leaves)
     fn compute_leaves(
-        preprocessing: &T,
+        preprocessing: &Self::Preprocessing,
         polynomials: &Polynomials,
         gamma: &F,
         tau: &F,
@@ -327,8 +341,8 @@ where
     fn protocol_name() -> &'static [u8];
 }
 
-pub trait MemoryCheckingVerifier<F, G, Polynomials, T>:
-    MemoryCheckingProver<F, G, Polynomials, T>
+pub trait MemoryCheckingVerifier<F, G, Polynomials>:
+    MemoryCheckingProver<F, G, Polynomials>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
@@ -336,7 +350,7 @@ where
 {
     /// Verifies a memory checking proof, given its associated polynomial `commitment`.
     fn verify_memory_checking(
-        preprocessing: &T,
+        preprocessing: &Self::Preprocessing,
         mut proof: MemoryCheckingProof<
             G,
             Polynomials,
@@ -386,10 +400,10 @@ where
 
         proof
             .read_write_openings
-            .compute_verifier_openings(&r_read_write);
+            .compute_verifier_openings(&NoPreprocessing, &r_read_write);
         proof
             .init_final_openings
-            .compute_verifier_openings(&r_init_final);
+            .compute_verifier_openings(preprocessing, &r_init_final);
 
         Self::check_fingerprints(
             preprocessing,
@@ -405,26 +419,30 @@ where
     }
 
     /// Computes "read" memory tuples (one per memory) from the given `openings`.
-    fn read_tuples(preprocessing: &T, openings: &Self::ReadWriteOpenings)
-        -> Vec<Self::MemoryTuple>;
+    fn read_tuples(
+        preprocessing: &Self::Preprocessing,
+        openings: &Self::ReadWriteOpenings,
+    ) -> Vec<Self::MemoryTuple>;
     /// Computes "write" memory tuples (one per memory) from the given `openings`.
     fn write_tuples(
-        preprocessing: &T,
+        preprocessing: &Self::Preprocessing,
         openings: &Self::ReadWriteOpenings,
     ) -> Vec<Self::MemoryTuple>;
     /// Computes "init" memory tuples (one per memory) from the given `openings`.
-    fn init_tuples(preprocessing: &T, openings: &Self::InitFinalOpenings)
-        -> Vec<Self::MemoryTuple>;
+    fn init_tuples(
+        preprocessing: &Self::Preprocessing,
+        openings: &Self::InitFinalOpenings,
+    ) -> Vec<Self::MemoryTuple>;
     /// Computes "final" memory tuples (one per memory) from the given `openings`.
     fn final_tuples(
-        preprocessing: &T,
+        preprocessing: &Self::Preprocessing,
         openings: &Self::InitFinalOpenings,
     ) -> Vec<Self::MemoryTuple>;
 
     /// Checks that the claimed multiset hashes (output by grand product) are consistent with the
     /// openings given by `read_write_openings` and `init_final_openings`.
     fn check_fingerprints(
-        preprocessing: &T,
+        preprocessing: &Self::Preprocessing,
         claims_read_write: Vec<F>,
         claims_init_final: Vec<F>,
         read_write_openings: &Self::ReadWriteOpenings,
@@ -540,7 +558,7 @@ mod tests {
         }
 
         struct TestProver {}
-        impl MemoryCheckingProver<Fr, EdwardsProjective, NormalMems, NoPreprocessing> for TestProver {
+        impl MemoryCheckingProver<Fr, EdwardsProjective, NormalMems> for TestProver {
             type ReadWriteOpenings = FakeOpeningProof;
             type InitFinalOpenings = FakeOpeningProof;
 
@@ -744,7 +762,7 @@ mod tests {
         }
 
         struct TestProver {}
-        impl MemoryCheckingProver<Fr, EdwardsProjective, Polys, NoPreprocessing> for TestProver {
+        impl MemoryCheckingProver<Fr, EdwardsProjective, Polys> for TestProver {
             type ReadWriteOpenings = FakeOpeningProof;
             type InitFinalOpenings = FakeOpeningProof;
 
@@ -994,7 +1012,7 @@ mod tests {
         }
 
         struct TestProver {}
-        impl MemoryCheckingProver<Fr, EdwardsProjective, FlagPolys, NoPreprocessing> for TestProver {
+        impl MemoryCheckingProver<Fr, EdwardsProjective, FlagPolys> for TestProver {
             type ReadWriteOpenings = FakeOpeningProof;
             type InitFinalOpenings = FakeOpeningProof;
 

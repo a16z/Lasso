@@ -4,9 +4,11 @@ use fixedbitset::*;
 use rand::prelude::StdRng;
 use std::marker::Sync;
 use std::ops::Range;
+use strum::{EnumCount, IntoEnumIterator};
 
 use crate::jolt::subtable::LassoSubtable;
 use crate::utils::instruction_utils::chunk_operand;
+use common::rv_trace::ELFInstruction;
 use std::fmt::Debug;
 
 #[enum_dispatch]
@@ -67,10 +69,11 @@ pub trait JoltInstruction: Sync + Clone + Debug {
     }
 }
 
-pub trait Opcode {
-    /// Converts a variant of an instruction set enum into its canonical "opcode" value.
-    fn to_opcode(&self) -> u8 {
-        unsafe { *<*const _>::from(self).cast::<u8>() }
+pub trait JoltInstructionSet:
+    JoltInstruction + IntoEnumIterator + EnumCount + for<'a> TryFrom<&'a ELFInstruction>
+{
+    fn enum_index(instruction: &Self) -> usize {
+        unsafe { *<*const _>::from(instruction).cast::<u8>() as usize }
     }
 }
 
@@ -124,13 +127,18 @@ pub mod beq;
 pub mod bge;
 pub mod bgeu;
 pub mod bne;
+pub mod lb;
+pub mod lh;
 pub mod or;
+pub mod sb;
+pub mod sh;
 pub mod sll;
 pub mod slt;
 pub mod sltu;
 pub mod sra;
 pub mod srl;
 pub mod sub;
+pub mod sw;
 pub mod xor;
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use crate::constants::MEMORY_OPS_PER_INSTRUCTION;
+use crate::constants::{MEMORY_OPS_PER_INSTRUCTION, PANIC_ADDRESS, INPUT_START_ADDRESS, OUTPUT_START_ADDRESS};
 use serde::{Deserialize, Serialize};
 use strum_macros::FromRepr;
 
@@ -58,7 +58,7 @@ impl Into<[MemoryOp; MEMORY_OPS_PER_INSTRUCTION]> for &RVTraceRow {
         };
 
         let ram_byte_read = |index: usize| match self.memory_state {
-            Some(MemoryState::Read { address, value }) => (value >> (index * 8)) as u8,
+            Some(MemoryState::Read { address, value }) => (self.register_state.rd_post_val.unwrap() >> (index * 8)) as u8,
             Some(MemoryState::Write {
                 address,
                 pre_value,
@@ -325,7 +325,21 @@ impl ELFInstruction {
         };
 
         flags[7] = match self.opcode {
-            RV32IM::ADD | RV32IM::ADDI | RV32IM::JAL | RV32IM::JALR | RV32IM::AUIPC => true,
+            RV32IM::ADD 
+            | RV32IM::ADDI 
+            // Store and load instructions only have one lookup operand (rs2 and the RAM word, respectively)
+            // so we add the operand to a dummy operand of 0 in the circuit to obtain the lookup query.
+            | RV32IM::SB
+            | RV32IM::SH
+            | RV32IM::SW
+            | RV32IM::LB
+            | RV32IM::LH
+            | RV32IM::LW
+            | RV32IM::LBU
+            | RV32IM::LHU
+            | RV32IM::JAL 
+            | RV32IM::JALR 
+            | RV32IM::AUIPC => true,
             _ => false,
         };
 
@@ -442,7 +456,7 @@ impl RVTraceRow {
 }
 
 // Reference: https://www.cs.sfu.ca/~ashriram/Courses/CS295/assets/notebooks/RISCV/RISCV_CARD.pdf
-#[derive(Debug, PartialEq, Eq, Clone, Copy, FromRepr, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, FromRepr, Serialize, Deserialize, Hash)]
 #[repr(u8)]
 pub enum RV32IM {
     ADD,
@@ -626,4 +640,60 @@ impl RV32IM {
             | RV32IM::UNIMPL => unimplemented!(),
         }
     }
+}
+
+/// Represented as a "peripheral device" in the RISC-V emulator, this captures
+/// all reads from the reserved memory address space for program inputs and all writes
+/// to the reserved memory address space for program outputs.
+/// The inputs and outputs are part of the public inputs to the proof.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JoltDevice {
+    pub inputs: Vec<u8>,
+    pub outputs: Vec<u8>,
+    pub panic: bool,
+}
+
+impl JoltDevice {
+    pub fn new() -> Self {
+        Self {
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            panic: false,
+        }
+    }
+
+    pub fn load(&self, address: u64) -> u8 {
+        let internal_address = convert_read_address(address);
+        if self.inputs.len() <= internal_address {
+            0
+        } else {
+            self.inputs[internal_address]
+        }
+    }
+
+    pub fn store(&mut self, address: u64, value: u8) {
+        if address == PANIC_ADDRESS {
+            self.panic = true;
+            return;
+        }
+
+        let internal_address = convert_write_address(address);
+        if self.outputs.len() <= internal_address {
+            self.outputs.resize(internal_address + 1, 0);
+        }
+
+        self.outputs[internal_address] = value;
+    }
+
+    pub fn size(&self) -> usize {
+        self.inputs.len() + self.outputs.len()
+    }
+}
+
+fn convert_read_address(address: u64) -> usize {
+    (address - INPUT_START_ADDRESS) as usize
+}
+
+fn convert_write_address(address: u64) -> usize {
+    (address - OUTPUT_START_ADDRESS) as usize
 }

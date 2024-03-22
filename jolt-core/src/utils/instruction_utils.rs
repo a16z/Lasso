@@ -21,17 +21,27 @@ pub fn concatenate_lookups<F: PrimeField>(vals: &[F], C: usize, operand_bits: us
     sum
 }
 
-/// Returns the chunks of an operand passed as input 
+/// Returns the chunks of an operand passed as input
 pub fn chunk_operand(x: u64, C: usize, chunk_len: usize) -> Vec<u64> {
     let bit_mask = (1 << chunk_len) - 1;
     (0..C)
-      .map(|i| {
-        let shift = ((C - i - 1) * chunk_len) as u32;
-        x.checked_shr(shift).unwrap_or(0) & bit_mask
-      })
-      .collect()
-  }
+        .map(|i| {
+            let shift = ((C - i - 1) * chunk_len) as u32;
+            x.checked_shr(shift).unwrap_or(0) & bit_mask
+        })
+        .collect()
+}
 
+/// Returns the chunks of an operand passed as input
+pub fn chunk_operand_usize(x: u64, C: usize, chunk_len: usize) -> Vec<usize> {
+    let bit_mask = (1 << chunk_len) - 1;
+    (0..C)
+        .map(|i| {
+            let shift = ((C - i - 1) * chunk_len) as u32;
+            (x.checked_shr(shift).unwrap_or(0) & bit_mask) as usize
+        })
+        .collect()
+}
 
 /// Chunks `x` || `y` into `C` chunks bitwise.
 /// `log_M` is the number of bits of each of the `C` expected results.

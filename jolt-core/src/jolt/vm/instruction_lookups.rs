@@ -2,7 +2,7 @@ use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use common::constants::NUM_R1CS_POLYS;
-use itertools::{interleave, max, Itertools};
+use itertools::{interleave, Itertools};
 use merlin::Transcript;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use rayon::prelude::*;
@@ -10,8 +10,9 @@ use std::marker::PhantomData;
 use strum::{EnumCount, IntoEnumIterator};
 use tracing::trace_span;
 
-use crate::jolt::instruction::SubtableIndices;
-use crate::lasso::memory_checking::MultisetHashes;
+use crate::jolt::instruction::{JoltInstructionSet, SubtableIndices};
+use crate::jolt::subtable::JoltSubtableSet;
+use crate::lasso::memory_checking::{MultisetHashes, NoPreprocessing};
 use crate::poly::hyrax::{
     matrix_dimensions, BatchedHyraxOpeningProof, HyraxCommitment, HyraxGenerators,
 };
@@ -19,7 +20,7 @@ use crate::poly::pedersen::PedersenGenerators;
 use crate::utils::{mul_0_1_optimized, split_poly_flagged};
 use crate::{
     jolt::{
-        instruction::{JoltInstruction, Opcode},
+        instruction::JoltInstruction,
         subtable::{LassoSubtable, SubtableId},
     },
     lasso::memory_checking::{MemoryCheckingProof, MemoryCheckingProver, MemoryCheckingVerifier},
@@ -336,7 +337,7 @@ where
 pub struct InstructionFinalOpenings<F, Subtables>
 where
     F: PrimeField,
-    Subtables: LassoSubtable<F> + IntoEnumIterator,
+    Subtables: JoltSubtableSet<F>,
 {
     _subtables: PhantomData<Subtables>,
     /// Evaluations of the final_cts_i polynomials at the opening point. Vector is of length NUM_MEMORIES.
@@ -352,8 +353,10 @@ impl<F, G, Subtables> StructuredOpeningProof<F, G, InstructionPolynomials<F, G>>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
-    Subtables: LassoSubtable<F> + IntoEnumIterator,
+    Subtables: JoltSubtableSet<F>,
 {
+    type Preprocessing = InstructionLookupsPreprocessing<F>;
+
     #[tracing::instrument(skip_all, name = "InstructionFinalOpenings::open")]
     fn open(polynomials: &InstructionPolynomials<F, G>, opening_point: &Vec<F>) -> Self {
         // All of these evaluations share the lagrange basis polynomials.
@@ -387,7 +390,11 @@ where
         )
     }
 
-    fn compute_verifier_openings(&mut self, opening_point: &Vec<F>) {
+    fn compute_verifier_openings(
+        &mut self,
+        _preprocessing: &Self::Preprocessing,
+        opening_point: &Vec<F>,
+    ) {
         self.a_init_final =
             Some(IdentityPolynomial::new(opening_point.len()).evaluate(opening_point));
         self.v_init_final = Some(
@@ -414,14 +421,15 @@ where
 }
 
 impl<const C: usize, const M: usize, F, G, InstructionSet, Subtables>
-    MemoryCheckingProver<F, G, InstructionPolynomials<F, G>, InstructionLookupsPreprocessing<F>>
+    MemoryCheckingProver<F, G, InstructionPolynomials<F, G>>
     for InstructionLookupsProof<C, M, F, G, InstructionSet, Subtables>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
-    InstructionSet: JoltInstruction + Opcode + IntoEnumIterator + EnumCount,
-    Subtables: LassoSubtable<F> + IntoEnumIterator + EnumCount + From<SubtableId> + Into<usize>,
+    InstructionSet: JoltInstructionSet,
+    Subtables: JoltSubtableSet<F>,
 {
+    type Preprocessing = InstructionLookupsPreprocessing<F>;
     type ReadWriteOpenings = InstructionReadWriteOpenings<F>;
     type InitFinalOpenings = InstructionFinalOpenings<F, Subtables>;
 
@@ -679,13 +687,13 @@ where
 }
 
 impl<F, G, InstructionSet, Subtables, const C: usize, const M: usize>
-    MemoryCheckingVerifier<F, G, InstructionPolynomials<F, G>, InstructionLookupsPreprocessing<F>>
+    MemoryCheckingVerifier<F, G, InstructionPolynomials<F, G>>
     for InstructionLookupsProof<C, M, F, G, InstructionSet, Subtables>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
-    InstructionSet: JoltInstruction + Opcode + IntoEnumIterator + EnumCount,
-    Subtables: LassoSubtable<F> + IntoEnumIterator + EnumCount + From<SubtableId> + Into<usize>,
+    InstructionSet: JoltInstructionSet,
+    Subtables: JoltSubtableSet<F>,
 {
     fn read_tuples(
         preprocessing: &InstructionLookupsPreprocessing<F>,
@@ -749,8 +757,8 @@ pub struct InstructionLookupsProof<const C: usize, const M: usize, F, G, Instruc
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
-    Subtables: LassoSubtable<F> + IntoEnumIterator,
-    InstructionSet: JoltInstruction + Opcode + IntoEnumIterator + EnumCount,
+    Subtables: JoltSubtableSet<F>,
+    InstructionSet: JoltInstructionSet,
 {
     _instructions: PhantomData<InstructionSet>,
     /// "Primary" sumcheck, i.e. proving \sum_x \tilde{eq}(r, x) * \sum_i flag_i(x) * g_i(E_1(x), ..., E_\alpha(x))
@@ -787,17 +795,17 @@ impl<F: PrimeField> InstructionLookupsPreprocessing<F> {
     #[tracing::instrument(skip_all, name = "InstructionLookups::preprocess")]
     pub fn preprocess<const C: usize, const M: usize, InstructionSet, Subtables>() -> Self
     where
-        InstructionSet: JoltInstruction + Opcode + IntoEnumIterator + EnumCount,
-        Subtables: LassoSubtable<F> + IntoEnumIterator + EnumCount + From<SubtableId> + Into<usize>,
+        InstructionSet: JoltInstructionSet,
+        Subtables: JoltSubtableSet<F>,
     {
         let materialized_subtables = Self::materialize_subtables::<M, Subtables>();
 
+        // Build a mapping from subtable type => chunk indices that access that subtable type
         let mut subtable_indices: Vec<SubtableIndices> =
             vec![SubtableIndices::with_capacity(C); Subtables::COUNT];
         for instruction in InstructionSet::iter() {
             for (subtable, indices) in instruction.subtables::<F>(C, M) {
-                subtable_indices[Subtables::from(subtable.subtable_id()).into()]
-                    .union_with(&indices);
+                subtable_indices[Subtables::enum_index(subtable)].union_with(&indices);
             }
         }
 
@@ -819,13 +827,13 @@ impl<F: PrimeField> InstructionLookupsPreprocessing<F> {
         for instruction in InstructionSet::iter() {
             for (subtable, dimension_indices) in instruction.subtables::<F>(C, M) {
                 let memory_indices: Vec<_> = subtable_to_memory_indices
-                    [Subtables::from(subtable.subtable_id()).into()]
+                    [Subtables::enum_index(subtable)]
                 .iter()
                 .filter(|memory_index| {
                     dimension_indices.contains(memory_to_dimension_index[**memory_index])
                 })
                 .collect();
-                instruction_to_memory_indices[instruction.to_opcode() as usize]
+                instruction_to_memory_indices[InstructionSet::enum_index(&instruction)]
                     .extend(memory_indices);
             }
         }
@@ -844,7 +852,7 @@ impl<F: PrimeField> InstructionLookupsPreprocessing<F> {
     #[tracing::instrument(skip_all)]
     fn materialize_subtables<const M: usize, Subtables>() -> Vec<Vec<F>>
     where
-        Subtables: LassoSubtable<F> + IntoEnumIterator + EnumCount,
+        Subtables: JoltSubtableSet<F>,
     {
         let mut subtables = Vec::with_capacity(Subtables::COUNT);
         for subtable in Subtables::iter() {
@@ -859,8 +867,8 @@ impl<F, G, InstructionSet, Subtables, const C: usize, const M: usize>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
-    InstructionSet: JoltInstruction + Opcode + IntoEnumIterator + EnumCount,
-    Subtables: LassoSubtable<F> + IntoEnumIterator + EnumCount + From<SubtableId> + Into<usize>,
+    InstructionSet: JoltInstructionSet,
+    Subtables: JoltSubtableSet<F>,
 {
     const NUM_SUBTABLES: usize = Subtables::COUNT;
     const NUM_INSTRUCTIONS: usize = InstructionSet::COUNT;
@@ -1042,8 +1050,8 @@ where
                 let mut subtable_lookups = vec![F::zero(); m];
 
                 for (j, op) in ops.iter().enumerate() {
-                    let memories_used =
-                        &preprocessing.instruction_to_memory_indices[op.to_opcode() as usize];
+                    let memories_used = &preprocessing.instruction_to_memory_indices
+                        [InstructionSet::enum_index(op)];
                     if memories_used.contains(&memory_index) {
                         let memory_address = access_sequence[j];
                         debug_assert!(memory_address < M);
@@ -1090,8 +1098,7 @@ where
         let mut instruction_flag_bitvectors: Vec<Vec<u64>> =
             vec![vec![0u64; m]; Self::NUM_INSTRUCTIONS];
         for (j, op) in ops.iter().enumerate() {
-            let opcode_index = op.to_opcode() as usize;
-            instruction_flag_bitvectors[opcode_index][j] = 1;
+            instruction_flag_bitvectors[InstructionSet::enum_index(op)][j] = 1;
         }
 
         let instruction_flag_polys: Vec<DensePolynomial<F>> = instruction_flag_bitvectors
@@ -1289,7 +1296,7 @@ where
                 //            + eq[111] * [ flags_0[111] * g_0(E_0)[111] + flags_1[111] * g_1(E_1)[111]]
                 let mut inner_sum = vec![F::zero(); num_eval_points];
                 for instruction in InstructionSet::iter() {
-                    let instruction_index = instruction.to_opcode() as usize;
+                    let instruction_index = InstructionSet::enum_index(&instruction);
                     let memory_indices =
                         &preprocessing.instruction_to_memory_indices[instruction_index];
 
@@ -1364,7 +1371,7 @@ where
             .enumerate()
             .map(|(k, op)| {
                 let memory_indices =
-                    &preprocessing.instruction_to_memory_indices[op.to_opcode() as usize];
+                    &preprocessing.instruction_to_memory_indices[InstructionSet::enum_index(op)];
                 let filtered_operands: Vec<F> = memory_indices
                     .iter()
                     .map(|memory_index| E_polys[*memory_index][k])
@@ -1393,9 +1400,8 @@ where
 
         let mut sum = F::zero();
         for instruction in InstructionSet::iter() {
-            let instruction_index = instruction.to_opcode() as usize;
-            let memory_indices =
-                &preprocessing.instruction_to_memory_indices[instruction.to_opcode() as usize];
+            let instruction_index = InstructionSet::enum_index(&instruction);
+            let memory_indices = &preprocessing.instruction_to_memory_indices[instruction_index];
             let filtered_operands: Vec<F> = memory_indices.iter().map(|i| vals[*i]).collect();
             sum += flags[instruction_index] * instruction.combine_lookups(&filtered_operands, C, M);
         }

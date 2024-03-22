@@ -10,15 +10,18 @@ use strum_macros::{EnumCount as EnumCountMacro, EnumIter};
 use super::Jolt;
 use crate::jolt::instruction::{
     add::ADDInstruction, and::ANDInstruction, beq::BEQInstruction, bge::BGEInstruction,
-    bgeu::BGEUInstruction, bne::BNEInstruction, or::ORInstruction, sll::SLLInstruction,
+    bgeu::BGEUInstruction, bne::BNEInstruction, lb::LBInstruction, lh::LHInstruction,
+    or::ORInstruction, sb::SBInstruction, sh::SHInstruction, sll::SLLInstruction,
     slt::SLTInstruction, sltu::SLTUInstruction, sra::SRAInstruction, srl::SRLInstruction,
-    sub::SUBInstruction, xor::XORInstruction, JoltInstruction, Opcode, SubtableIndices,
+    sub::SUBInstruction, sw::SWInstruction, xor::XORInstruction, JoltInstruction,
+    JoltInstructionSet, SubtableIndices,
 };
 use crate::jolt::subtable::{
     and::AndSubtable, eq::EqSubtable, eq_abs::EqAbsSubtable, eq_msb::EqMSBSubtable,
     gt_msb::GtMSBSubtable, identity::IdentitySubtable, lt_abs::LtAbsSubtable, ltu::LtuSubtable,
-    or::OrSubtable, sll::SllSubtable, sra_sign::SraSignSubtable, srl::SrlSubtable,
-    truncate_overflow::TruncateOverflowSubtable, xor::XorSubtable, LassoSubtable, SubtableId,
+    or::OrSubtable, sign_extend::SignExtendSubtable, sll::SllSubtable, sra_sign::SraSignSubtable,
+    srl::SrlSubtable, truncate_overflow::TruncateOverflowSubtable, xor::XorSubtable,
+    JoltSubtableSet, LassoSubtable, SubtableId,
 };
 
 /// Generates an enum out of a list of JoltInstruction types. All JoltInstruction methods
@@ -30,7 +33,7 @@ macro_rules! instruction_set {
         #[derive(Copy, Clone, Debug, EnumIter, EnumCountMacro)]
         #[enum_dispatch(JoltInstruction)]
         pub enum $enum_name { $($alias($struct)),+ }
-        impl Opcode for $enum_name {}
+        impl JoltInstructionSet for $enum_name {}
         impl $enum_name {
             pub fn random_instruction(rng: &mut StdRng) -> Self {
                 let index = rng.next_u64() as usize % $enum_name::COUNT;
@@ -46,8 +49,6 @@ macro_rules! instruction_set {
     };
 }
 
-// TODO(moodlezoup): Consider replacing From<TypeId> and Into<usize> with
-//     combined trait/function to_enum_index(subtable: &dyn LassoSubtable<F>) => usize
 /// Generates an enum out of a list of LassoSubtable types. All LassoSubtable methods
 /// are callable on the enum type via enum_dispatch.
 macro_rules! subtable_enum {
@@ -73,6 +74,7 @@ macro_rules! subtable_enum {
             unsafe { *<*const _>::from(&self).cast::<usize>() }
           }
         }
+        impl<F: PrimeField> JoltSubtableSet<F> for $enum_name<F> {}
     };
 }
 
@@ -86,7 +88,12 @@ instruction_set!(
   BGE: BGEInstruction,
   BGEU: BGEUInstruction,
   BNE: BNEInstruction,
+  LB: LBInstruction,
+  LH: LHInstruction,
   OR: ORInstruction,
+  SB: SBInstruction,
+  SH: SHInstruction,
+  SW: SWInstruction,
   SLL: SLLInstruction<WORD_SIZE>,
   SLT: SLTInstruction,
   SLTU: SLTUInstruction,
@@ -106,6 +113,8 @@ subtable_enum!(
   LT_ABS: LtAbsSubtable<F>,
   LTU: LtuSubtable<F>,
   OR: OrSubtable<F>,
+  SIGN_EXTEND_8: SignExtendSubtable<F, 8>,
+  SIGN_EXTEND_16: SignExtendSubtable<F, 16>,
   SLL0: SllSubtable<F, 0, WORD_SIZE>,
   SLL1: SllSubtable<F, 1, WORD_SIZE>,
   SLL2: SllSubtable<F, 2, WORD_SIZE>,
@@ -116,6 +125,7 @@ subtable_enum!(
   SRL2: SrlSubtable<F, 2, WORD_SIZE>,
   SRL3: SrlSubtable<F, 3, WORD_SIZE>,
   TRUNCATE: TruncateOverflowSubtable<F, WORD_SIZE>,
+  TRUNCATE_BYTE: TruncateOverflowSubtable<F, 8>,
   XOR: XorSubtable<F>
 );
 
@@ -141,19 +151,24 @@ where
 #[cfg(test)]
 mod tests {
     use ark_bn254::{Fr, G1Projective};
-    use common::constants::MEMORY_OPS_PER_INSTRUCTION;
+    use common::constants::{
+        INPUT_END_ADDRESS, INPUT_START_ADDRESS, MEMORY_OPS_PER_INSTRUCTION, OUTPUT_END_ADDRESS,
+        OUTPUT_START_ADDRESS, RAM_START_ADDRESS,
+    };
+    use common::rv_trace::{JoltDevice, RV32IM};
     use common::{
-        path::JoltPaths,
         rv_trace::{ELFInstruction, RVTraceRow},
         serializable::Serializable,
     };
     use itertools::Itertools;
+    use jolt_sdk::host;
     use merlin::Transcript;
     use rand_core::SeedableRng;
     use std::collections::HashSet;
 
     use crate::jolt::instruction::{add::ADDInstruction, JoltInstruction};
     use crate::jolt::vm::bytecode::BytecodeRow;
+    use crate::jolt::vm::read_write_memory::RandomInstruction;
     use crate::jolt::vm::rv32i_vm::{Jolt, RV32IJoltVM, C, M, RV32I};
     use crate::jolt::vm::MemoryOp;
     use std::sync::Mutex;
@@ -175,7 +190,13 @@ mod tests {
 
         let mut prover_transcript = Transcript::new(b"example");
 
-        let preprocessing = RV32IJoltVM::preprocess(1 << 20, 1 << 20, 1 << 22);
+        let preprocessing = RV32IJoltVM::preprocess(
+            vec![ELFInstruction::random(0, &mut rng)],
+            JoltDevice::new(),
+            1 << 20,
+            1 << 20,
+            1 << 22,
+        );
 
         let (proof, _, commitment) =
             <RV32IJoltVM as Jolt<_, G1Projective, C, M>>::prove_instruction_lookups(
@@ -213,82 +234,17 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn fib_r1cs() {
-    //     let _guard = FIB_FILE_LOCK.lock().unwrap();
-    //     compiler::cached_compile_example("fibonacci");
-
-    //     let trace_location = JoltPaths::trace_path("fibonacci");
-    //     let loaded_trace: Vec<RVTraceRow> =
-    //         Vec::<RVTraceRow>::deserialize_from_file(&trace_location)
-    //             .expect("deserialization failed");
-    //     let bytecode_location = JoltPaths::bytecode_path("fibonacci");
-    //     let bytecode = Vec::<ELFInstruction>::deserialize_from_file(&bytecode_location)
-    //         .expect("deserialization failed");
-    //     let bytecode_rows: Vec<BytecodeRow> = bytecode.clone().iter().map(BytecodeRow::from).collect();
-
-    //     let converted_trace: Vec<RVTraceRow> = loaded_trace
-    //         .into_iter()
-    //         .map(|common| RVTraceRow::from_common(common))
-    //         .collect();
-
-    //     let bytecode_trace: Vec<BytecodeRow> = converted_trace
-    //         .iter()
-    //         .map(|row| row.to_bytecode_trace())
-    //         .collect();
-
-    //     let instructions_r1cs: Vec<RV32I> = converted_trace
-    //         .clone()
-    //         .into_iter()
-    //         .flat_map(|row| {
-    //             let instructions = row.to_jolt_instructions();
-    //             if instructions.is_empty() {
-    //                 vec![ADDInstruction::<32>(0_u64, 0_u64).into()]
-    //             } else {
-    //                 instructions
-    //             }
-    //         })
-    //         .collect();
-
-    //     let memory_trace_r1cs = converted_trace
-    //         .clone()
-    //         .into_iter()
-    //         .flat_map(|row| row.to_ram_ops())
-    //         .collect_vec();
-
-    //     let circuit_flags = converted_trace
-    //         .clone()
-    //         .iter()
-    //         .flat_map(|row| row.to_circuit_flags::<Fr>())
-    //         .collect::<Vec<_>>();
-
-    //     let mut transcript = Transcript::new(b"Jolt transcript");
-
-    //     let preprocessing = RV32IJoltVM::preprocess(1 << 20, 1 << 20, 1 << 20);
-    //     <RV32IJoltVM as Jolt<'_, _, G1Projective, C, M>>::prove_r1cs(
-    //         preprocessing,
-    //         instructions_r1cs,
-    //         bytecode_rows,
-    //         bytecode_trace,
-    //         bytecode,
-    //         memory_trace_r1cs,
-    //         circuit_flags,
-    //         &mut transcript,
-    //     );
-    // }
-
     #[test]
     fn fib_e2e() {
-        use common::{path::JoltPaths, rv_trace::ELFInstruction};
         let _guard = FIB_FILE_LOCK.lock().unwrap();
-        compiler::cached_compile_example("fibonacci");
 
-        let trace_location = JoltPaths::trace_path("fibonacci");
-        let trace: Vec<RVTraceRow> = Vec::<RVTraceRow>::deserialize_from_file(&trace_location)
-            .expect("deserialization failed");
-        let bytecode_location = JoltPaths::bytecode_path("fibonacci");
-        let bytecode = Vec::<ELFInstruction>::deserialize_from_file(&bytecode_location)
-            .expect("deserialization failed");
+        let program = host::Program::new("fibonacci-guest").input(&9u32);
+        let (trace, bytecode, io_device) = program.trace();
+
+        let bytecode_rows: Vec<BytecodeRow> = bytecode
+            .iter()
+            .map(BytecodeRow::from_instruction::<RV32I>)
+            .collect();
 
         let bytecode_trace: Vec<BytecodeRow> = trace
             .iter()
@@ -319,7 +275,8 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let preprocessing = RV32IJoltVM::preprocess(1 << 20, 1 << 20, 1 << 20);
+        let preprocessing =
+            RV32IJoltVM::preprocess(bytecode.clone(), io_device, 1 << 20, 1 << 20, 1 << 20);
         let (proof, commitments) = <RV32IJoltVM as Jolt<Fr, G1Projective, C, M>>::prove(
             bytecode,
             bytecode_trace,
@@ -336,81 +293,17 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn sha3_r1cs() {
-    //     use common::{path::JoltPaths, serializable::Serializable, ELFInstruction};
-    //     compiler::cached_compile_example("sha3-ex");
-
-    //     let trace_location = JoltPaths::trace_path("sha3-ex");
-    //     let loaded_trace: Vec<RVTraceRow> =
-    //         Vec::<RVTraceRow>::deserialize_from_file(&trace_location)
-    //             .expect("deserialization failed");
-    //     let bytecode_location = JoltPaths::bytecode_path("sha3-ex");
-    //     let bytecode = Vec::<ELFInstruction>::deserialize_from_file(&bytecode_location)
-    //         .expect("deserialization failed");
-    //     let bytecode_rows: Vec<BytecodeRow> = bytecode.clone().iter().map(BytecodeRow::from).collect();
-
-    //     let converted_trace: Vec<RVTraceRow> = loaded_trace
-    //         .into_iter()
-    //         .map(|common| RVTraceRow::from_common(common))
-    //         .collect();
-
-    //     let bytecode_trace: Vec<BytecodeRow> = converted_trace
-    //         .iter()
-    //         .map(|row| row.to_bytecode_trace())
-    //         .collect();
-
-    //     // R1CS expects a single lookup instruction per
-    //     let instructions_r1cs: Vec<RV32I> = converted_trace
-    //         .clone()
-    //         .into_iter()
-    //         .flat_map(|row| {
-    //             let instructions = row.to_jolt_instructions();
-    //             if instructions.is_empty() {
-    //                 vec![ADDInstruction::<32>(0_u64, 0_u64).into()]
-    //             } else {
-    //                 instructions
-    //             }
-    //         })
-    //         .collect();
-
-    //     let memory_trace_r1cs = converted_trace
-    //         .clone()
-    //         .into_iter()
-    //         .flat_map(|row| row.to_ram_ops())
-    //         .collect_vec();
-
-    //     let circuit_flags = converted_trace
-    //         .clone()
-    //         .iter()
-    //         .flat_map(|row| row.to_circuit_flags())
-    //         .collect::<Vec<_>>();
-
-    //     let mut transcript = Transcript::new(b"Jolt transcript");
-    //     let preprocessing = RV32IJoltVM::preprocess(1 << 20, 1 << 20, 1 << 20);
-    //     <RV32IJoltVM as Jolt<'_, _, G1Projective, C, M>>::prove_r1cs(
-    //         preprocessing,
-    //         instructions_r1cs,
-    //         bytecode_rows,
-    //         bytecode_trace,
-    //         bytecode,
-    //         memory_trace_r1cs,
-    //         circuit_flags,
-    //         &mut transcript,
-    //     );
-    // }
-
     #[test]
     fn sha3_e2e() {
         let _guard = SHA3_FILE_LOCK.lock().unwrap();
-        compiler::cached_compile_example("sha3-ex");
 
-        let trace_location = JoltPaths::trace_path("sha3-ex");
-        let trace: Vec<RVTraceRow> = Vec::<RVTraceRow>::deserialize_from_file(&trace_location)
-            .expect("deserialization failed");
-        let bytecode_location = JoltPaths::bytecode_path("sha3-ex");
-        let bytecode = Vec::<ELFInstruction>::deserialize_from_file(&bytecode_location)
-            .expect("deserialization failed");
+        let program = host::Program::new("sha3-guest").input(&[5u8; 32]);
+        let (mut trace, bytecode, io_device) = program.trace();
+
+        let bytecode_rows: Vec<BytecodeRow> = bytecode
+            .iter()
+            .map(BytecodeRow::from_instruction::<RV32I>)
+            .collect();
 
         let bytecode_trace: Vec<BytecodeRow> = trace
             .iter()
@@ -441,7 +334,8 @@ mod tests {
             })
             .collect();
 
-        let preprocessing = RV32IJoltVM::preprocess(1 << 20, 1 << 20, 1 << 20);
+        let preprocessing =
+            RV32IJoltVM::preprocess(bytecode.clone(), io_device, 1 << 20, 1 << 20, 1 << 20);
         let (jolt_proof, jolt_commitments) = <RV32IJoltVM as Jolt<_, G1Projective, C, M>>::prove(
             bytecode,
             bytecode_trace,

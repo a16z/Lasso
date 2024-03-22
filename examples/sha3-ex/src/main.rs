@@ -1,22 +1,9 @@
-#![no_std]
-#![no_main]
+use jolt_sdk::host::Program;
 
-use core::arch::global_asm;
-use core::panic::PanicInfo;
+pub fn main() {
+    let input: &[u8] = &[5u8; 32];
+    Program::new("sha3-guest").input(&input).trace_analyze();
 
-use sha3::{Digest, Keccak256};
-
-global_asm!(include_str!("entry.s"));
-
-#[no_mangle]
-pub extern "C" fn main() {
-    let mut hasher = Keccak256::new();
-    let inputs = [5u8; 2048];
-    hasher.update(inputs);
-    let _result = hasher.finalize();
-}
-
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+    // let (_, device) = Program::new("sha3-guest").input(&input).trace();
+    // println!("{}", hex::encode(device.outputs));
 }

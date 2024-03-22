@@ -1,5 +1,5 @@
 MEMORY {
-  program (rwx) : ORIGIN = 0x80000000, LENGTH = 2 * 1024 * 1024
+  program (rwx) : ORIGIN = 0x80000000, LENGTH = 10 * 1024 * 1024
 }
 
 SECTIONS {
@@ -20,6 +20,6 @@ SECTIONS {
   } > program
 
   . = ALIGN(8);
-  . = . + 40960;
+  . = . + 4096;
   _STACK_PTR = .;
 }

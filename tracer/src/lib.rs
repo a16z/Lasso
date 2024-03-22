@@ -15,52 +15,20 @@ mod decode;
 mod emulator;
 mod trace;
 
-pub use common::rv_trace::{ELFInstruction, MemoryState, RVTraceRow, RegisterState, RV32IM};
+pub use common::rv_trace::{
+    ELFInstruction, JoltDevice, MemoryState, RVTraceRow, RegisterState, RV32IM,
+};
 
 use crate::decode::decode_raw;
 
-/// Runs the tracer with the provided paths.
-///
-/// # Parameters
-///
-/// * `elf_location`: The path to the ELF file.
-/// * `trace_destination`: The path where the trace will be written.
-/// * `bytecode_destination`: The path where the bytecode will be written.
-///
-/// # Returns
-///
-/// * A `Result` containing a tuple of the num trace rows and instructions if successful, or an error if not.
-pub fn run_tracer_with_paths(
-    elf_location: PathBuf,
-    trace_destination: PathBuf,
-    bytecode_destination: PathBuf,
-) -> Result<(usize, usize), Box<dyn std::error::Error>> {
-    if !elf_location.exists() {
-        return Err(format!("Could not find ELF file at location {:?}", elf_location).into());
-    }
-
-    let rows = trace(&elf_location);
-    rows.serialize_to_file(&trace_destination)?;
-    println!(
-        "Wrote {} rows to         {}.",
-        rows.len(),
-        trace_destination.display()
-    );
-
-    let instructions = decode(&elf_location);
-    instructions.serialize_to_file(&bytecode_destination)?;
-    println!(
-        "Wrote {} instructions to {}.",
-        instructions.len(),
-        bytecode_destination.display()
-    );
-    Ok((rows.len(), instructions.len()))
-}
-
-pub fn trace(elf: &PathBuf) -> Vec<RVTraceRow> {
+pub fn trace(elf: &PathBuf, inputs: Vec<u8>) -> (Vec<RVTraceRow>, JoltDevice) {
     let term = DefaultTerminal::new();
     let mut emulator = Emulator::new(Box::new(term));
     emulator.update_xlen(get_xlen());
+
+    let mut jolt_device = JoltDevice::new();
+    jolt_device.inputs = inputs;
+    emulator.get_mut_cpu().get_mut_mmu().jolt_device = jolt_device;
 
     let mut elf_file = File::open(elf).unwrap();
 
@@ -87,8 +55,11 @@ pub fn trace(elf: &PathBuf) -> Vec<RVTraceRow> {
     let mut rows = emulator.get_mut_cpu().tracer.rows.try_borrow_mut().unwrap();
     let mut output = Vec::new();
     output.append(&mut rows);
+    drop(rows);
 
-    output
+    let device = emulator.get_mut_cpu().get_mut_mmu().jolt_device.clone();
+
+    (output, device)
 }
 
 pub fn decode(elf: &PathBuf) -> Vec<ELFInstruction> {

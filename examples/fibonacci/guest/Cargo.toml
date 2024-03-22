@@ -1,9 +1,13 @@
+cargo-features = ["per-package-target"]
+
 [package]
-name = "integration-tests"
+name = "fibonacci-guest"
 version = "0.1.0"
 edition = "2021"
+
+forced-target = "riscv32i-unknown-none-elf"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-compiler = { path = "../compiler" }
+jolt-sdk = { path = "../../../jolt-sdk" }

@@ -4,6 +4,7 @@ use merlin::Transcript;
 
 use super::pedersen::PedersenGenerators;
 use crate::{
+    lasso::memory_checking::NoPreprocessing,
     subprotocols::concatenated_commitment::ConcatenatedPolynomialOpeningProof,
     utils::errors::ProofVerifyError,
 };
@@ -38,6 +39,7 @@ where
     G: CurveGroup<ScalarField = F>,
     Polynomials: BatchablePolynomials<G> + ?Sized,
 {
+    type Preprocessing = NoPreprocessing;
     type Proof = ConcatenatedPolynomialOpeningProof<G>;
 
     /// Evaluates each fo the given `polynomials` at the given `opening_point`.
@@ -56,7 +58,12 @@ where
     /// Often some of the openings do not require an opening proof provided by the prover, and
     /// instead can be efficiently computed by the verifier by itself. This function populates
     /// any such fields in `self`.
-    fn compute_verifier_openings(&mut self, _opening_point: &Vec<F>) {}
+    fn compute_verifier_openings(
+        &mut self,
+        _preprocessing: &Self::Preprocessing,
+        _opening_point: &Vec<F>,
+    ) {
+    }
 
     /// Verifies an opening proof, given the associated polynomial `commitment` and `opening_point`.
     fn verify_openings(

@@ -1,0 +1,24 @@
+[package]
+name = "jolt-sdk-macros"
+version = "0.1.0"
+authors = [
+    "Michael Zhu <mzhu@a16z.com>",
+    "Sam Ragsdale <sragsdale@a16z.com>",
+    "Noah Citron <ncitron@a16z.com>"
+]
+description = "SDK for Jolt"
+license = "MIT"
+homepage = "https://github.com/a16z/lasso/README.md"
+repository = "https://github.com/a16z/lasso"
+edition="2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0", features = ["full"] }
+quote = "1.0"
+
+postcard = "1.0.8"
+serde = { version = "1.0.196", features = [] }
+common = { path = "../../common" }

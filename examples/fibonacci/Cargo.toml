@@ -5,8 +5,8 @@ name = "fibonacci"
 version = "0.1.0"
 edition = "2021"
 
-forced-target = "riscv32i-unknown-none-elf"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+jolt-sdk = { path = "../../jolt-sdk", features = ["std"] }
+
+hex = "0.4.3"
+sha3 = { version = "0.10.8", default-features = false }

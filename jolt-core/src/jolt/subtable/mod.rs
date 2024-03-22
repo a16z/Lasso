@@ -2,6 +2,7 @@ use ark_ff::PrimeField;
 use enum_dispatch::enum_dispatch;
 use std::any::TypeId;
 use std::marker::Sync;
+use strum::{EnumCount, IntoEnumIterator};
 
 #[enum_dispatch]
 pub trait LassoSubtable<F: PrimeField>: 'static + Sync {
@@ -20,6 +21,13 @@ pub trait LassoSubtable<F: PrimeField>: 'static + Sync {
 }
 
 pub type SubtableId = TypeId;
+pub trait JoltSubtableSet<F: PrimeField>:
+    LassoSubtable<F> + IntoEnumIterator + EnumCount + From<SubtableId> + Into<usize>
+{
+    fn enum_index(subtable: Box<dyn LassoSubtable<F>>) -> usize {
+        Self::from(subtable.subtable_id()).into()
+    }
+}
 
 pub mod and;
 pub mod eq;
@@ -30,6 +38,7 @@ pub mod identity;
 pub mod lt_abs;
 pub mod ltu;
 pub mod or;
+pub mod sign_extend;
 pub mod sll;
 pub mod sra_sign;
 pub mod srl;

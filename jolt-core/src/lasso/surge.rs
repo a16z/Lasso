@@ -24,6 +24,8 @@ use crate::{
     utils::{errors::ProofVerifyError, math::Math, mul_0_1_optimized, transcript::ProofTranscript},
 };
 
+use super::memory_checking::NoPreprocessing;
+
 pub struct SurgePolys<F: PrimeField, G: CurveGroup<ScalarField = F>> {
     _group: PhantomData<G>,
     pub dim: Vec<DensePolynomial<F>>,
@@ -254,6 +256,8 @@ where
     G: CurveGroup<ScalarField = F>,
     Instruction: JoltInstruction + Default,
 {
+    type Preprocessing = SurgePreprocessing<F, Instruction, C, M>;
+
     #[tracing::instrument(skip_all, name = "SurgeFinalOpenings::open")]
     fn open(polynomials: &SurgePolys<F, G>, opening_point: &Vec<F>) -> Self {
         let chis = EqPolynomial::new(opening_point.to_vec()).evals();
@@ -286,7 +290,7 @@ where
         )
     }
 
-    fn compute_verifier_openings(&mut self, opening_point: &Vec<F>) {
+    fn compute_verifier_openings(&mut self, _: &Self::Preprocessing, opening_point: &Vec<F>) {
         self.a_init_final =
             Some(IdentityPolynomial::new(opening_point.len()).evaluate(opening_point));
         self.v_init_final = Some(
@@ -314,14 +318,14 @@ where
     }
 }
 
-impl<F, G, Instruction, const C: usize, const M: usize>
-    MemoryCheckingProver<F, G, SurgePolys<F, G>, SurgePreprocessing<F, Instruction, C, M>>
+impl<F, G, Instruction, const C: usize, const M: usize> MemoryCheckingProver<F, G, SurgePolys<F, G>>
     for SurgeProof<F, G, Instruction, C, M>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
     Instruction: JoltInstruction + Default + Sync,
 {
+    type Preprocessing = SurgePreprocessing<F, Instruction, C, M>;
     type ReadWriteOpenings = SurgeReadWriteOpenings<F>;
     type InitFinalOpenings = SurgeFinalOpenings<F, Instruction, C, M>;
 
@@ -408,8 +412,7 @@ where
 }
 
 impl<F, G, Instruction, const C: usize, const M: usize>
-    MemoryCheckingVerifier<F, G, SurgePolys<F, G>, SurgePreprocessing<F, Instruction, C, M>>
-    for SurgeProof<F, G, Instruction, C, M>
+    MemoryCheckingVerifier<F, G, SurgePolys<F, G>> for SurgeProof<F, G, Instruction, C, M>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,

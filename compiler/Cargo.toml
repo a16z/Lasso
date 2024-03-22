@@ -1,9 +1,0 @@
-[package]
-name = "compiler"
-version = "0.2.0"
-edition = "2021"
-
-[dependencies]
-clap = { version = "4.3.10", features = ["derive"] }
-common = { path = "../common" }
-tracer = { path = "../tracer" }
