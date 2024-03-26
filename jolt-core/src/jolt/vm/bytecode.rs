@@ -727,8 +727,6 @@ where
         opening_point: &Vec<F>,
         transcript: &mut Transcript,
     ) -> Result<(), ProofVerifyError> {
-        let mut combined_openings: Vec<F> = vec![self.t_final.clone()];
-
         opening_proof.verify(
             &commitment.t_final_generators,
             transcript,

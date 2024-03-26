@@ -444,9 +444,6 @@ impl<F: PrimeField, G: CurveGroup<ScalarField = F>> ReadWriteMemory<F, G> {
 pub struct BatchedMemoryPolynomials<F: PrimeField> {
     /// Contains t_read and t_write
     pub(crate) batched_t_read_write: DensePolynomial<F>,
-    /// Contains:
-    /// v_final, t_final
-    batched_init_final: DensePolynomial<F>,
 }
 
 pub struct MemoryCommitment<G: CurveGroup> {
@@ -457,9 +454,10 @@ pub struct MemoryCommitment<G: CurveGroup> {
     /// Commitments for t_read, t_write
     pub t_read_write_commitments: ConcatenatedPolynomialCommitment<G>,
 
-    /// Commitments for:
-    /// v_final, t_final
-    pub init_final_commitments: ConcatenatedPolynomialCommitment<G>,
+    /// Commitments for v_final, t_final
+    pub final_generators: HyraxGenerators<1, G>,
+    pub v_final_commitment: HyraxCommitment<1, G>,
+    pub t_final_commitment: HyraxCommitment<1, G>,
 }
 
 impl<F, G> BatchablePolynomials<G> for ReadWriteMemory<F, G>
@@ -474,11 +472,9 @@ where
     fn batch(&self) -> Self::BatchedPolynomials {
         let batched_t_read_write =
             DensePolynomial::merge(self.t_read.iter().chain(self.t_write.iter()));
-        let batched_init_final = DensePolynomial::merge(&vec![&self.v_final, &self.t_final]);
 
         Self::BatchedPolynomials {
             batched_t_read_write,
-            batched_init_final,
         }
     }
 
@@ -501,15 +497,21 @@ where
         let t_read_write_commitments = batched_polys
             .batched_t_read_write
             .combined_commit(pedersen_generators);
-        let init_final_commitments = batched_polys
-            .batched_init_final
-            .combined_commit(pedersen_generators);
+
+        let final_generators =
+            HyraxGenerators::new(self.t_final.get_num_vars(), pedersen_generators);
+        let (v_final_commitment, t_final_commitment) = rayon::join(
+            || HyraxCommitment::commit(&self.v_final, &final_generators),
+            || HyraxCommitment::commit(&self.t_final, &final_generators),
+        );
 
         Self::Commitment {
             read_write_generators,
             a_v_read_write_commitments,
             t_read_write_commitments,
-            init_final_commitments,
+            final_generators,
+            v_final_commitment,
+            t_final_commitment,
         }
     }
 }
@@ -663,11 +665,16 @@ where
     t_final: F,
 }
 
+pub struct MemoryInitFinalOpeningProof<G: CurveGroup> {
+    v_t_opening_proof: BatchedHyraxOpeningProof<1, G>,
+}
+
 impl<F, G> StructuredOpeningProof<F, G, ReadWriteMemory<F, G>> for MemoryInitFinalOpenings<F>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
 {
+    type Proof = MemoryInitFinalOpeningProof<G>;
     type Preprocessing = ReadWriteMemoryPreprocessing;
 
     #[tracing::instrument(skip_all, name = "MemoryInitFinalOpenings::open")]
@@ -694,12 +701,16 @@ where
         openings: &Self,
         transcript: &mut Transcript,
     ) -> Self::Proof {
-        ConcatenatedPolynomialOpeningProof::prove(
-            &batched_polynomials.batched_init_final,
+        // TODO(moodlezoup): sumcheck to prove v_final is consistent with output
+
+        let v_t_opening_proof = BatchedHyraxOpeningProof::prove(
+            &[&polynomials.v_final, &polynomials.t_final],
             &opening_point,
-            &vec![openings.v_final, openings.t_final],
+            &[openings.v_final, openings.t_final],
             transcript,
-        )
+        );
+
+        Self::Proof { v_t_opening_proof }
     }
 
     fn compute_verifier_openings(
@@ -736,10 +747,14 @@ where
         opening_point: &Vec<F>,
         transcript: &mut Transcript,
     ) -> Result<(), ProofVerifyError> {
-        opening_proof.verify(
+        opening_proof.v_t_opening_proof.verify(
+            &commitment.final_generators,
             opening_point,
             &vec![self.v_final, self.t_final],
-            &commitment.init_final_commitments,
+            &[
+                &commitment.v_final_commitment,
+                &commitment.t_final_commitment,
+            ],
             transcript,
         )
     }
@@ -972,7 +987,7 @@ mod tests {
             &batched_polys,
             &mut transcript,
         );
-        
+
         let mut transcript = Transcript::new(b"test_transcript");
         preprocessing.program_io = Some(JoltDevice::new());
         ReadWriteMemoryProof::verify_memory_checking(
