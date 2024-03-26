@@ -15,20 +15,26 @@ use crate::{
     poly::{
         dense_mlpoly::DensePolynomial,
         eq_poly::EqPolynomial,
-        hyrax::{matrix_dimensions, BatchedHyraxOpeningProof, HyraxCommitment, HyraxGenerators},
+        hyrax::{
+            matrix_dimensions, BatchedHyraxOpeningProof, HyraxCommitment, HyraxGenerators,
+            HyraxOpeningProof,
+        },
         identity_poly::IdentityPolynomial,
         pedersen::PedersenGenerators,
         structured_poly::{BatchablePolynomials, StructuredOpeningProof},
     },
-    subprotocols::concatenated_commitment::{
-        ConcatenatedPolynomialCommitment, ConcatenatedPolynomialOpeningProof,
+    subprotocols::{
+        concatenated_commitment::{
+            ConcatenatedPolynomialCommitment, ConcatenatedPolynomialOpeningProof,
+        },
+        sumcheck::SumcheckInstanceProof,
     },
-    utils::{errors::ProofVerifyError, math::Math, mul_0_optimized},
+    utils::{errors::ProofVerifyError, math::Math, mul_0_optimized, transcript::ProofTranscript},
 };
 use common::constants::{
     memory_address_to_witness_index, BYTES_PER_INSTRUCTION, INPUT_START_ADDRESS, MAX_INPUT_SIZE,
-    MAX_OUTPUT_SIZE, MEMORY_OPS_PER_INSTRUCTION, NUM_R1CS_POLYS, RAM_START_ADDRESS,
-    RAM_WITNESS_OFFSET, REGISTER_COUNT,
+    MAX_OUTPUT_SIZE, MEMORY_OPS_PER_INSTRUCTION, NUM_R1CS_POLYS, OUTPUT_START_ADDRESS,
+    PANIC_ADDRESS, RAM_START_ADDRESS, RAM_WITNESS_OFFSET, REGISTER_COUNT,
 };
 use common::rv_trace::{ELFInstruction, JoltDevice, MemoryOp, RV32IM};
 use common::to_ram_address;
@@ -117,21 +123,6 @@ pub fn random_memory_trace(
     }
 
     memory_trace
-}
-
-pub struct ReadWriteMemoryProof<F, G>
-where
-    F: PrimeField,
-    G: CurveGroup<ScalarField = F>,
-{
-    pub program_io: JoltDevice,
-    pub memory_checking_proof: MemoryCheckingProof<
-        G,
-        ReadWriteMemory<F, G>,
-        MemoryReadWriteOpenings<F, G>,
-        MemoryInitFinalOpenings<F>,
-    >,
-    pub timestamp_validity_proof: TimestampValidityProof<F, G>,
 }
 
 #[derive(Clone)]
@@ -665,7 +656,11 @@ where
     t_final: F,
 }
 
-pub struct MemoryInitFinalOpeningProof<G: CurveGroup> {
+pub struct MemoryInitFinalOpeningProof<F, G>
+where
+    F: PrimeField,
+    G: CurveGroup<ScalarField = F>,
+{
     v_t_opening_proof: BatchedHyraxOpeningProof<1, G>,
 }
 
@@ -674,7 +669,7 @@ where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
 {
-    type Proof = MemoryInitFinalOpeningProof<G>;
+    type Proof = MemoryInitFinalOpeningProof<F, G>;
     type Preprocessing = ReadWriteMemoryPreprocessing;
 
     #[tracing::instrument(skip_all, name = "MemoryInitFinalOpenings::open")]
@@ -696,13 +691,11 @@ where
     #[tracing::instrument(skip_all, name = "MemoryInitFinalOpenings::prove_openings")]
     fn prove_openings(
         polynomials: &ReadWriteMemory<F, G>,
-        batched_polynomials: &BatchedMemoryPolynomials<F>,
+        _: &BatchedMemoryPolynomials<F>,
         opening_point: &Vec<F>,
         openings: &Self,
         transcript: &mut Transcript,
     ) -> Self::Proof {
-        // TODO(moodlezoup): sumcheck to prove v_final is consistent with output
-
         let v_t_opening_proof = BatchedHyraxOpeningProof::prove(
             &[&polynomials.v_final, &polynomials.t_final],
             &opening_point,
@@ -756,7 +749,9 @@ where
                 &commitment.t_final_commitment,
             ],
             transcript,
-        )
+        )?;
+
+        Ok(())
     }
 }
 
@@ -779,7 +774,7 @@ where
 
     #[tracing::instrument(skip_all, name = "ReadWriteMemory::compute_leaves")]
     fn compute_leaves(
-        preprocessing: &Self::Preprocessing,
+        _: &Self::Preprocessing,
         polynomials: &ReadWriteMemory<F, G>,
         gamma: &F,
         tau: &F,
@@ -947,6 +942,214 @@ where
             openings.v_final,
             openings.t_final,
         )]
+    }
+}
+
+pub struct OutputSumcheckProof<F, G>
+where
+    F: PrimeField,
+    G: CurveGroup<ScalarField = F>,
+{
+    num_rounds: usize,
+    /// Sumcheck proof that v_final is equal to the program outputs at the relevant indices.
+    sumcheck_proof: SumcheckInstanceProof<F>,
+    /// Opening of v_final at the random point chosen over the course of sumcheck
+    opening: F,
+    /// Hyrax opening proof of the v_final opening
+    opening_proof: HyraxOpeningProof<1, G>,
+}
+
+pub struct ReadWriteMemoryProof<F, G>
+where
+    F: PrimeField,
+    G: CurveGroup<ScalarField = F>,
+{
+    pub memory_checking_proof: MemoryCheckingProof<
+        G,
+        ReadWriteMemory<F, G>,
+        MemoryReadWriteOpenings<F, G>,
+        MemoryInitFinalOpenings<F>,
+    >,
+    pub timestamp_validity_proof: TimestampValidityProof<F, G>,
+    pub output_proof: OutputSumcheckProof<F, G>,
+}
+
+impl<F, G> ReadWriteMemoryProof<F, G>
+where
+    F: PrimeField,
+    G: CurveGroup<ScalarField = F>,
+{
+    #[tracing::instrument(skip_all, name = "ReadWriteMemoryProof::prove")]
+    pub fn prove(
+        preprocessing: &ReadWriteMemoryPreprocessing,
+        polynomials: &ReadWriteMemory<F, G>,
+        batched_polynomials: &BatchedMemoryPolynomials<F>,
+        read_timestamps: [Vec<u64>; MEMORY_OPS_PER_INSTRUCTION],
+        program_io: &JoltDevice,
+        generators: &PedersenGenerators<G>,
+        transcript: &mut Transcript,
+    ) -> Self {
+        let memory_checking_proof = ReadWriteMemoryProof::prove_memory_checking(
+            preprocessing,
+            polynomials,
+            batched_polynomials,
+            transcript,
+        );
+
+        let num_rounds = polynomials.memory_size.log_2();
+        let r_eq = <Transcript as ProofTranscript<G>>::challenge_vector(
+            transcript,
+            b"output_sumcheck",
+            num_rounds,
+        );
+        let eq: DensePolynomial<F> = DensePolynomial::new(EqPolynomial::new(r_eq.to_vec()).evals());
+
+        let io_witness_range: Vec<_> = (0..polynomials.memory_size as u64)
+            .into_iter()
+            .map(|i| {
+                if i >= INPUT_START_ADDRESS && i < RAM_WITNESS_OFFSET {
+                    F::one()
+                } else {
+                    F::zero()
+                }
+            })
+            .collect();
+
+        let mut v_io: Vec<u64> = vec![0; polynomials.memory_size];
+        // Copy input bytes
+        let mut input_index = memory_address_to_witness_index(INPUT_START_ADDRESS);
+        for byte in program_io.inputs.iter() {
+            v_io[input_index] = *byte as u64;
+            input_index += 1;
+        }
+        // Copy output bytes
+        let mut output_index = memory_address_to_witness_index(OUTPUT_START_ADDRESS);
+        for byte in program_io.outputs.iter() {
+            v_io[output_index] = *byte as u64;
+            output_index += 1;
+        }
+        // Copy panic bit
+        v_io[memory_address_to_witness_index(PANIC_ADDRESS)] = program_io.panic as u64;
+
+        let mut sumcheck_polys = vec![
+            eq,
+            DensePolynomial::new(io_witness_range),
+            polynomials.v_final.clone(),
+            DensePolynomial::from_u64(&v_io),
+        ];
+
+        // eq * io_witness_range * (v_final - v_io)
+        let output_check_fn = |vals: &[F]| -> F { vals[0] * vals[1] * (vals[2] - vals[3]) };
+
+        let (sumcheck_proof, r_sumcheck, sumcheck_openings) =
+            SumcheckInstanceProof::<F>::prove_arbitrary::<_, G, Transcript>(
+                &F::zero(),
+                num_rounds,
+                &mut sumcheck_polys,
+                output_check_fn,
+                3,
+                transcript,
+            );
+
+        let sumcheck_opening_proof =
+            HyraxOpeningProof::prove(&polynomials.v_final, &r_sumcheck, transcript);
+
+        let output_proof = OutputSumcheckProof {
+            num_rounds,
+            sumcheck_proof,
+            opening: sumcheck_openings[2], // only need v_final; verifier computes the rest on its own
+            opening_proof: sumcheck_opening_proof,
+        };
+
+        let timestamp_validity_proof = TimestampValidityProof::prove(
+            read_timestamps,
+            polynomials,
+            batched_polynomials,
+            &generators,
+            transcript,
+        );
+
+        Self {
+            memory_checking_proof,
+            output_proof,
+            timestamp_validity_proof,
+        }
+    }
+
+    pub fn verify(
+        mut self,
+        preprocessing: &mut ReadWriteMemoryPreprocessing,
+        commitment: &MemoryCommitment<G>,
+        transcript: &mut Transcript,
+    ) -> Result<(), ProofVerifyError> {
+        ReadWriteMemoryProof::verify_memory_checking(
+            preprocessing,
+            self.memory_checking_proof,
+            commitment,
+            transcript,
+        )?;
+
+        let r_eq = <Transcript as ProofTranscript<G>>::challenge_vector(
+            transcript,
+            b"output_sumcheck",
+            self.output_proof.num_rounds,
+        );
+
+        let (sumcheck_claim, r_sumcheck) = self
+            .output_proof
+            .sumcheck_proof
+            .verify::<G, Transcript>(F::zero(), self.output_proof.num_rounds, 3, transcript)?;
+
+        let eq_eval = EqPolynomial::new(r_eq.to_vec()).evaluate(&r_sumcheck);
+
+        // TODO(moodlezoup): Compute openings without instantiating io_witness_range polynomial itself
+        let memory_size = self.output_proof.num_rounds.pow2();
+        let io_witness_range: Vec<_> = (0..memory_size as u64)
+            .into_iter()
+            .map(|i| {
+                if i >= INPUT_START_ADDRESS && i < RAM_WITNESS_OFFSET {
+                    F::one()
+                } else {
+                    F::zero()
+                }
+            })
+            .collect();
+        let io_witness_range_eval = DensePolynomial::new(io_witness_range).evaluate(&r_sumcheck);
+
+        // TODO(moodlezoup): Compute openings without instantiating v_io polynomial itself
+        let mut v_io: Vec<u64> = vec![0; memory_size];
+        // Copy input bytes
+        let mut input_index = memory_address_to_witness_index(INPUT_START_ADDRESS);
+        for byte in preprocessing.program_io.as_ref().unwrap().inputs.iter() {
+            v_io[input_index] = *byte as u64;
+            input_index += 1;
+        }
+        // Copy output bytes
+        let mut output_index = memory_address_to_witness_index(OUTPUT_START_ADDRESS);
+        for byte in preprocessing.program_io.as_ref().unwrap().outputs.iter() {
+            v_io[output_index] = *byte as u64;
+            output_index += 1;
+        }
+        // Copy panic bit
+        v_io[memory_address_to_witness_index(PANIC_ADDRESS)] =
+            preprocessing.program_io.as_ref().unwrap().panic as u64;
+        let v_io_eval = DensePolynomial::from_u64(&v_io).evaluate(&r_sumcheck);
+
+        assert_eq!(
+            eq_eval * io_witness_range_eval * (self.output_proof.opening - v_io_eval),
+            sumcheck_claim,
+            "Output sumcheck check failed."
+        );
+
+        self.output_proof.opening_proof.verify(
+            &commitment.final_generators,
+            transcript,
+            &r_sumcheck,
+            &self.output_proof.opening,
+            &commitment.v_final_commitment,
+        )?;
+
+        TimestampValidityProof::verify(&mut self.timestamp_validity_proof, commitment, transcript)
     }
 }
 

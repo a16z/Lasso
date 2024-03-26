@@ -81,7 +81,7 @@ fn prove_e2e_except_r1cs(
             &mut transcript,
         );
         let _: (_, ReadWriteMemory<Fr, G1Projective>, _) = RV32IJoltVM::prove_memory(
-            JoltDevice::new(),
+            &JoltDevice::new(),
             &preprocessing.read_write_memory,
             memory_trace,
             &preprocessing.generators,
@@ -155,7 +155,7 @@ fn prove_memory(
     let work = Box::new(move || {
         let mut transcript = Transcript::new(b"example");
         let _: (_, ReadWriteMemory<Fr, G1Projective>, _) = RV32IJoltVM::prove_memory(
-            JoltDevice::new(),
+            &JoltDevice::new(),
             &preprocessing.read_write_memory,
             memory_trace,
             &preprocessing.generators,

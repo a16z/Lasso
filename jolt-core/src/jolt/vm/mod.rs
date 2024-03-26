@@ -56,6 +56,7 @@ where
     InstructionSet: JoltInstructionSet,
     Subtables: JoltSubtableSet<F>,
 {
+    program_io: JoltDevice,
     bytecode: BytecodeProof<F, G>,
     read_write_memory: ReadWriteMemoryProof<F, G>,
     instruction_lookups: InstructionLookupsProof<C, M, F, G, InstructionSet, Subtables>,
@@ -79,8 +80,7 @@ pub struct JoltCommitments<G: CurveGroup> {
     pub r1cs: R1CSUniqueCommitments<G>
 }
 
-pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, const M: usize>
-{
+pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, const M: usize> {
     type InstructionSet: JoltInstructionSet;
     type Subtables: JoltSubtableSet<F>;
 
@@ -174,7 +174,7 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
         );
 
         let (memory_proof, memory_polynomials, memory_commitment) = Self::prove_memory(
-            program_io,
+            &program_io,
             &preprocessing.read_write_memory,
             padded_memory_trace,
             &preprocessing.generators,
@@ -220,6 +220,7 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
         };
 
         let jolt_proof = JoltProof {
+            program_io,
             bytecode: bytecode_proof,
             read_write_memory: memory_proof,
             instruction_lookups: instruction_lookups_proof,
@@ -245,6 +246,7 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
             &mut preprocessing.read_write_memory,
             proof.read_write_memory,
             &commitments.read_write_memory,
+            proof.program_io,
             &mut transcript,
         )?;
         Self::verify_instruction_lookups(
@@ -309,7 +311,7 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
 
     #[tracing::instrument(skip_all, name = "Jolt::prove_memory")]
     fn prove_memory(
-        program_io: JoltDevice,
+        program_io: &JoltDevice,
         preprocessing: &ReadWriteMemoryPreprocessing,
         memory_trace: Vec<[MemoryOp; MEMORY_OPS_PER_INSTRUCTION]>,
         generators: &PedersenGenerators<G>,
@@ -319,56 +321,37 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
         ReadWriteMemory<F, G>,
         MemoryCommitment<G>,
     ) {
-        let (memory, read_timestamps) =
-            ReadWriteMemory::new(&program_io, preprocessing, memory_trace, transcript);
-        let batched_polys = memory.batch();
+        let (polynomials, read_timestamps) =
+            ReadWriteMemory::new(program_io, preprocessing, memory_trace, transcript);
+        let batched_polys = polynomials.batch();
         let commitment: MemoryCommitment<G> =
-            ReadWriteMemory::commit(&memory, &batched_polys, &generators);
+            ReadWriteMemory::commit(&polynomials, &batched_polys, &generators);
 
-        let memory_checking_proof = ReadWriteMemoryProof::prove_memory_checking(
+        let proof = ReadWriteMemoryProof::prove(
             preprocessing,
-            &memory,
+            &polynomials,
             &batched_polys,
-            transcript,
-        );
-
-        let timestamp_validity_proof = TimestampValidityProof::prove(
             read_timestamps,
-            &memory,
-            &batched_polys,
-            &generators,
+            program_io,
+            generators,
             transcript,
         );
 
-        (
-            ReadWriteMemoryProof {
-                program_io,
-                memory_checking_proof,
-                timestamp_validity_proof,
-            },
-            memory,
-            commitment,
-        )
+        (proof, polynomials, commitment)
     }
 
     fn verify_memory(
         preprocessing: &mut ReadWriteMemoryPreprocessing,
-        mut proof: ReadWriteMemoryProof<F, G>,
+        proof: ReadWriteMemoryProof<F, G>,
         commitment: &MemoryCommitment<G>,
+        program_io: JoltDevice,
         transcript: &mut Transcript,
     ) -> Result<(), ProofVerifyError> {
-        assert!(proof.program_io.inputs.len() <= MAX_INPUT_SIZE as usize);
-        assert!(proof.program_io.outputs.len() <= MAX_OUTPUT_SIZE as usize);
+        assert!(program_io.inputs.len() <= MAX_INPUT_SIZE as usize);
+        assert!(program_io.outputs.len() <= MAX_OUTPUT_SIZE as usize);
+        preprocessing.program_io = Some(program_io);
 
-        preprocessing.program_io = Some(proof.program_io);
-
-        ReadWriteMemoryProof::verify_memory_checking(
-            preprocessing,
-            proof.memory_checking_proof,
-            &commitment,
-            transcript,
-        )?;
-        TimestampValidityProof::verify(&mut proof.timestamp_validity_proof, &commitment, transcript)
+        ReadWriteMemoryProof::verify(proof, preprocessing, commitment, transcript)
     }
 
     #[tracing::instrument(skip_all, name = "Jolt::prove_r1cs")]
