@@ -959,43 +959,16 @@ where
     opening_proof: HyraxOpeningProof<1, G>,
 }
 
-pub struct ReadWriteMemoryProof<F, G>
+impl<F, G> OutputSumcheckProof<F, G>
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
 {
-    pub memory_checking_proof: MemoryCheckingProof<
-        G,
-        ReadWriteMemory<F, G>,
-        MemoryReadWriteOpenings<F, G>,
-        MemoryInitFinalOpenings<F>,
-    >,
-    pub timestamp_validity_proof: TimestampValidityProof<F, G>,
-    pub output_proof: OutputSumcheckProof<F, G>,
-}
-
-impl<F, G> ReadWriteMemoryProof<F, G>
-where
-    F: PrimeField,
-    G: CurveGroup<ScalarField = F>,
-{
-    #[tracing::instrument(skip_all, name = "ReadWriteMemoryProof::prove")]
-    pub fn prove(
-        preprocessing: &ReadWriteMemoryPreprocessing,
+    fn prove_outputs(
         polynomials: &ReadWriteMemory<F, G>,
-        batched_polynomials: &BatchedMemoryPolynomials<F>,
-        read_timestamps: [Vec<u64>; MEMORY_OPS_PER_INSTRUCTION],
         program_io: &JoltDevice,
-        generators: &PedersenGenerators<G>,
         transcript: &mut Transcript,
     ) -> Self {
-        let memory_checking_proof = ReadWriteMemoryProof::prove_memory_checking(
-            preprocessing,
-            polynomials,
-            batched_polynomials,
-            transcript,
-        );
-
         let num_rounds = polynomials.memory_size.log_2();
         let r_eq = <Transcript as ProofTranscript<G>>::challenge_vector(
             transcript,
@@ -1054,56 +1027,37 @@ where
         let sumcheck_opening_proof =
             HyraxOpeningProof::prove(&polynomials.v_final, &r_sumcheck, transcript);
 
-        let output_proof = OutputSumcheckProof {
+        Self {
             num_rounds,
             sumcheck_proof,
             opening: sumcheck_openings[2], // only need v_final; verifier computes the rest on its own
             opening_proof: sumcheck_opening_proof,
-        };
-
-        let timestamp_validity_proof = TimestampValidityProof::prove(
-            read_timestamps,
-            polynomials,
-            batched_polynomials,
-            &generators,
-            transcript,
-        );
-
-        Self {
-            memory_checking_proof,
-            output_proof,
-            timestamp_validity_proof,
         }
     }
 
-    pub fn verify(
-        mut self,
+    fn verify(
+        proof: &Self,
         preprocessing: &mut ReadWriteMemoryPreprocessing,
         commitment: &MemoryCommitment<G>,
         transcript: &mut Transcript,
     ) -> Result<(), ProofVerifyError> {
-        ReadWriteMemoryProof::verify_memory_checking(
-            preprocessing,
-            self.memory_checking_proof,
-            commitment,
-            transcript,
-        )?;
-
         let r_eq = <Transcript as ProofTranscript<G>>::challenge_vector(
             transcript,
             b"output_sumcheck",
-            self.output_proof.num_rounds,
+            proof.num_rounds,
         );
 
-        let (sumcheck_claim, r_sumcheck) = self
-            .output_proof
-            .sumcheck_proof
-            .verify::<G, Transcript>(F::zero(), self.output_proof.num_rounds, 3, transcript)?;
+        let (sumcheck_claim, r_sumcheck) = proof.sumcheck_proof.verify::<G, Transcript>(
+            F::zero(),
+            proof.num_rounds,
+            3,
+            transcript,
+        )?;
 
         let eq_eval = EqPolynomial::new(r_eq.to_vec()).evaluate(&r_sumcheck);
 
         // TODO(moodlezoup): Compute openings without instantiating io_witness_range polynomial itself
-        let memory_size = self.output_proof.num_rounds.pow2();
+        let memory_size = proof.num_rounds.pow2();
         let io_witness_range: Vec<_> = (0..memory_size as u64)
             .into_iter()
             .map(|i| {
@@ -1136,19 +1090,88 @@ where
         let v_io_eval = DensePolynomial::from_u64(&v_io).evaluate(&r_sumcheck);
 
         assert_eq!(
-            eq_eval * io_witness_range_eval * (self.output_proof.opening - v_io_eval),
+            eq_eval * io_witness_range_eval * (proof.opening - v_io_eval),
             sumcheck_claim,
             "Output sumcheck check failed."
         );
 
-        self.output_proof.opening_proof.verify(
+        proof.opening_proof.verify(
             &commitment.final_generators,
             transcript,
             &r_sumcheck,
-            &self.output_proof.opening,
+            &proof.opening,
             &commitment.v_final_commitment,
-        )?;
+        )
+    }
+}
 
+pub struct ReadWriteMemoryProof<F, G>
+where
+    F: PrimeField,
+    G: CurveGroup<ScalarField = F>,
+{
+    pub memory_checking_proof: MemoryCheckingProof<
+        G,
+        ReadWriteMemory<F, G>,
+        MemoryReadWriteOpenings<F, G>,
+        MemoryInitFinalOpenings<F>,
+    >,
+    pub timestamp_validity_proof: TimestampValidityProof<F, G>,
+    pub output_proof: OutputSumcheckProof<F, G>,
+}
+
+impl<F, G> ReadWriteMemoryProof<F, G>
+where
+    F: PrimeField,
+    G: CurveGroup<ScalarField = F>,
+{
+    #[tracing::instrument(skip_all, name = "ReadWriteMemoryProof::prove")]
+    pub fn prove(
+        preprocessing: &ReadWriteMemoryPreprocessing,
+        polynomials: &ReadWriteMemory<F, G>,
+        batched_polynomials: &BatchedMemoryPolynomials<F>,
+        read_timestamps: [Vec<u64>; MEMORY_OPS_PER_INSTRUCTION],
+        program_io: &JoltDevice,
+        generators: &PedersenGenerators<G>,
+        transcript: &mut Transcript,
+    ) -> Self {
+        let memory_checking_proof = ReadWriteMemoryProof::prove_memory_checking(
+            preprocessing,
+            polynomials,
+            batched_polynomials,
+            transcript,
+        );
+
+        let output_proof = OutputSumcheckProof::prove_outputs(polynomials, program_io, transcript);
+
+        let timestamp_validity_proof = TimestampValidityProof::prove(
+            read_timestamps,
+            polynomials,
+            batched_polynomials,
+            &generators,
+            transcript,
+        );
+
+        Self {
+            memory_checking_proof,
+            output_proof,
+            timestamp_validity_proof,
+        }
+    }
+
+    pub fn verify(
+        mut self,
+        preprocessing: &mut ReadWriteMemoryPreprocessing,
+        commitment: &MemoryCommitment<G>,
+        transcript: &mut Transcript,
+    ) -> Result<(), ProofVerifyError> {
+        ReadWriteMemoryProof::verify_memory_checking(
+            preprocessing,
+            self.memory_checking_proof,
+            commitment,
+            transcript,
+        )?;
+        OutputSumcheckProof::verify(&self.output_proof, preprocessing, commitment, transcript)?;
         TimestampValidityProof::verify(&mut self.timestamp_validity_proof, commitment, transcript)
     }
 }
