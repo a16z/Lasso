@@ -1131,7 +1131,7 @@ pub mod bench {
     use crate::poly::eq_poly::EqPolynomial;
     use crate::subprotocols::sumcheck::{CubicSumcheckParams, SumcheckInstanceProof};
     use crate::utils::index_to_field_bitvector;
-    use ark_curve25519::{EdwardsProjective, Fr};
+    use ark_bn254::{G1Projective, Fr};
     use ark_std::{rand::Rng, test_rng, One, UniformRand, Zero};
     use criterion::black_box;
 
@@ -1171,7 +1171,7 @@ pub mod bench {
                 let mut transcript = Transcript::new(b"test_transcript");
                 let params = black_box(params.clone());
                 let (proof, r, evals) = SumcheckInstanceProof::prove_cubic_batched::<
-                    EdwardsProjective,
+                    G1Projective,
                 >(&claim, params, &coeffs, &mut transcript);
             })
         });
@@ -1213,7 +1213,7 @@ pub mod bench {
                 let mut transcript = Transcript::new(b"test_transcript");
                 let params = black_box(params.clone());
                 let (proof, r, evals) = SumcheckInstanceProof::prove_cubic_batched::<
-                    EdwardsProjective,
+                    G1Projective,
                 >(&claim, params, &coeffs, &mut transcript);
             })
         });
@@ -1257,7 +1257,7 @@ pub mod bench {
                 let mut transcript = Transcript::new(b"test_transcript");
                 let params = black_box(params.clone());
                 let (proof, r, evals) = SumcheckInstanceProof::prove_cubic_batched::<
-                    EdwardsProjective,
+                    G1Projective,
                 >(
                     &joint_claim, params, &coeffs, &mut transcript
                 );
@@ -1271,7 +1271,7 @@ mod test {
     use super::*;
     use crate::utils::test::TestTranscript;
     use crate::{poly::eq_poly::EqPolynomial, utils::math::Math};
-    use ark_curve25519::{EdwardsProjective as G1Projective, Fr};
+    use ark_bn254::{G1Projective, Fr};
     use ark_ff::Zero;
     use ark_std::One;
 

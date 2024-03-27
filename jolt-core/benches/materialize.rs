@@ -1,4 +1,4 @@
-use ark_curve25519::Fr;
+use ark_bn254::Fr;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use liblasso::jolt::subtable::eq::EqSubtable;
 use liblasso::jolt::subtable::eq_abs::EqAbsSubtable;

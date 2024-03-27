@@ -95,7 +95,7 @@ impl<F: PrimeField, const CHUNK_INDEX: usize, const WORD_SIZE: usize> LassoSubta
 
 #[cfg(test)]
 mod test {
-    use ark_curve25519::Fr;
+    use ark_bn254::Fr;
 
     use crate::{
         jolt::subtable::{sll::SllSubtable, LassoSubtable},

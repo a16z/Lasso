@@ -6,20 +6,21 @@ authors = [
     "Srinath Setty <srinath@microsoft.com>",
     # authors who contributed to the Arkworks Spartan fork
     "Zhenfei Zhang <zhenfei.zhang@hotmail.com>",
-    # authors who contributed to Lasso
+    # authors who contributed to Lasso/Jolt
     "Michael Zhu <mzhu@a16z.com>",
     "Sam Ragsdale <sragsdale@a16z.com>",
     "Noah Citron <ncitron@a16z.com>",
+    "Arasu Arun <arasu.arun5@gmail.com>",
 ]
 edition = "2021"
 description = "The lookup singularity. Based on Spartan; built on Arkworks."
 documentation = "https://github.com/a16z/lasso/README.md"
 repository = "https://github.com/a16z/lasso"
 license-file = "LICENSE"
-keywords = ["zkSNARKs", "cryptography", "proofs"]
+keywords = ["SNARK", "cryptography", "proofs"]
 
 [dependencies]
-ark-curve25519 = "0.4.0"
+ark-bn254 = "0.4.0"
 ark-ec = { version = "0.4.2", default-features = false }
 ark-ff = { version = "0.4.2", default-features = false }
 ark-serialize = { version = "0.4.2", default-features = false, features = [
@@ -27,45 +28,38 @@ ark-serialize = { version = "0.4.2", default-features = false, features = [
 ] }
 ark-std = { version = "0.4.0", default-features = false }
 clap = { version = "4.3.10", features = ["derive"] }
-colored = "2.0.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
-dhat = "0.3.2"
 digest = "0.8.1"
 enum_dispatch = "0.3.12"
-eyre = "0.6.9"
-hashbrown = "0.14.0"
+fixedbitset = "0.5.0"
 itertools = "0.10.0"
+lazy_static = "1.4.0"
 merlin = "3.0.0"
 num-integer = "0.1.45"
 plotters = "0.3.5"
-postcard = { version = "1.0.8", default-features = false, features = ["use-std"] }
+postcard = { version = "1.0.8", default-features = false, features = [
+    "use-std",
+] }
 rand = "0.7.3"
 rand_chacha = { version = "0.3.0", default-features = false }
 rand_core = { version = "0.5", default-features = false }
 rayon = { version = "^1.8.0", optional = true }
 rgb = "0.8.37"
-seq-macro = "0.3.3"
+serde = { version = "1.0.*", default-features = false }
 sha3 = "0.8.2"
+smallvec = "1.13.1"
 strum = "0.25.0"
 strum_macros = "0.25.2"
-subtle = { version = "2.4", default-features = false }
 textplots = "0.8.4"
+thiserror = "1.0.58"
 tracing = "0.1.37"
 tracing-chrome = "0.7.1"
 tracing-flame = "0.2.0"
 tracing-subscriber = "0.3.18"
 tracing-texray = "0.2.0"
-zeroize = { version = "1", default-features = false }
 
 common = { path = "../common" }
 tracer = { path = "../tracer" }
-
-ark-bn254 = "0.4.0"
-lazy_static = "1.4.0"
-fixedbitset = "0.5.0"
-thiserror = "1.0.58"
-smallvec = "1.13.1"
-serde = { version = "1.0.*", default-features = false }
 
 [build-dependencies]
 common = { path = "../common" }
@@ -84,7 +78,6 @@ default = [
 ]
 multicore = ["rayon"]
 ark-msm = [] # run with arkworks MSM without small field element optimization
-dhat-heap = []
 
 [[bench]]
 name = "sumcheck"

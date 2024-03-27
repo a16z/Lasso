@@ -46,7 +46,7 @@ impl<F: PrimeField, const WIDTH: usize> LassoSubtable<F> for SignExtendSubtable<
 
 #[cfg(test)]
 mod test {
-    use ark_curve25519::Fr;
+    use ark_bn254::Fr;
 
     use crate::{
         jolt::subtable::{sign_extend::SignExtendSubtable, LassoSubtable},

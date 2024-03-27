@@ -94,9 +94,11 @@ impl<F: PrimeField> DensePolynomial<F> {
         let n = self.len() / 2;
         let (left, right) = self.Z.split_at_mut(n);
 
-        left.par_iter_mut().zip(right.par_iter()).for_each(|(a, b)| {
-            *a += *r * (*b - *a);
-        });
+        left.par_iter_mut()
+            .zip(right.par_iter())
+            .for_each(|(a, b)| {
+                *a += *r * (*b - *a);
+            });
 
         self.num_vars -= 1;
         self.len = n;
@@ -329,7 +331,7 @@ impl<F: PrimeField> AddAssign<&DensePolynomial<F>> for DensePolynomial<F> {
 pub mod bench {
     use super::*;
     use crate::utils::gen_random_point;
-    use ark_curve25519::{EdwardsProjective, Fr};
+    use ark_bn254::{Fr, G1Projective};
     use criterion::{black_box, measurement::WallTime, BenchmarkGroup};
 
     pub fn dense_ml_poly_bench(group: &mut BenchmarkGroup<'_, WallTime>) {
@@ -360,7 +362,7 @@ pub mod bench {
 
     pub fn init_commit_bench(
         log_size: usize,
-    ) -> (HyraxGenerators<1, EdwardsProjective>, DensePolynomial<Fr>) {
+    ) -> (HyraxGenerators<1, G1Projective>, DensePolynomial<Fr>) {
         let evals: Vec<Fr> = gen_random_point::<Fr>(1 << log_size);
 
         let pedersen_generators = PedersenGenerators::new(1 << log_size, b"test_gens");
@@ -369,10 +371,7 @@ pub mod bench {
         (gens, poly)
     }
 
-    pub fn run_commit_bench(
-        gens: HyraxGenerators<1, EdwardsProjective>,
-        poly: DensePolynomial<Fr>,
-    ) {
+    pub fn run_commit_bench(gens: HyraxGenerators<1, G1Projective>, poly: DensePolynomial<Fr>) {
         let result = black_box(HyraxCommitment::commit(&poly, &gens));
         black_box(result);
     }
@@ -383,8 +382,8 @@ mod tests {
     use crate::poly::hyrax::matrix_dimensions;
 
     use super::*;
-    use ark_curve25519::EdwardsProjective as G1Projective;
-    use ark_curve25519::Fr;
+    use ark_bn254::Fr;
+    use ark_bn254::G1Projective;
     use ark_std::test_rng;
     use ark_std::One;
     use ark_std::UniformRand;

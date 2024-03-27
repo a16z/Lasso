@@ -938,7 +938,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_curve25519::{EdwardsProjective, Fr};
+    use ark_bn254::{G1Projective, Fr};
     use rand_core::SeedableRng;
 
     #[test]
@@ -956,7 +956,7 @@ mod tests {
         let mut transcript = Transcript::new(b"test_transcript");
 
         let mut preprocessing = ReadWriteMemoryPreprocessing::preprocess(&bytecode);
-        let (rw_memory, _): (ReadWriteMemory<Fr, EdwardsProjective>, _) = ReadWriteMemory::new(
+        let (rw_memory, _): (ReadWriteMemory<Fr, G1Projective>, _) = ReadWriteMemory::new(
             &JoltDevice::new(),
             &preprocessing,
             memory_trace,

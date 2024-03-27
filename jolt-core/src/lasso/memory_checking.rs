@@ -500,7 +500,7 @@ mod tests {
     use crate::poly::pedersen::PedersenGenerators;
 
     use super::*;
-    use ark_curve25519::{EdwardsProjective, Fr};
+    use ark_bn254::{G1Projective, Fr};
     use ark_ff::Field;
     use ark_std::{One, Zero};
 
@@ -517,7 +517,7 @@ mod tests {
         }
         struct FakeType();
         struct FakeOpeningProof();
-        impl StructuredOpeningProof<Fr, EdwardsProjective, NormalMems> for FakeOpeningProof {
+        impl StructuredOpeningProof<Fr, G1Projective, NormalMems> for FakeOpeningProof {
             fn open(_: &NormalMems, _: &Vec<Fr>) -> Self {
                 unimplemented!()
             }
@@ -541,7 +541,7 @@ mod tests {
             }
         }
 
-        impl BatchablePolynomials<EdwardsProjective> for NormalMems {
+        impl BatchablePolynomials<G1Projective> for NormalMems {
             type Commitment = FakeType;
             type BatchedPolynomials = FakeType;
 
@@ -551,14 +551,14 @@ mod tests {
             fn commit(
                 &self,
                 _batched_polys: &Self::BatchedPolynomials,
-                _generators: &PedersenGenerators<EdwardsProjective>,
+                _generators: &PedersenGenerators<G1Projective>,
             ) -> Self::Commitment {
                 unimplemented!()
             }
         }
 
         struct TestProver {}
-        impl MemoryCheckingProver<Fr, EdwardsProjective, NormalMems> for TestProver {
+        impl MemoryCheckingProver<Fr, G1Projective, NormalMems> for TestProver {
             type ReadWriteOpenings = FakeOpeningProof;
             type InitFinalOpenings = FakeOpeningProof;
 
@@ -670,28 +670,28 @@ mod tests {
 
         // Verify
         let mut transcript = Transcript::new(b"test_transcript");
-        let _gamma: Fr = <Transcript as ProofTranscript<EdwardsProjective>>::challenge_scalar(
+        let _gamma: Fr = <Transcript as ProofTranscript<G1Projective>>::challenge_scalar(
             &mut transcript,
             b"Memory checking gamma",
         );
-        let _tau: Fr = <Transcript as ProofTranscript<EdwardsProjective>>::challenge_scalar(
+        let _tau: Fr = <Transcript as ProofTranscript<G1Projective>>::challenge_scalar(
             &mut transcript,
             b"Memory checking tau",
         );
-        <Transcript as ProofTranscript<EdwardsProjective>>::append_protocol_name(
+        <Transcript as ProofTranscript<G1Projective>>::append_protocol_name(
             &mut transcript,
             TestProver::protocol_name(),
         );
-        multiset_hashes.append_to_transcript::<EdwardsProjective>(&mut transcript);
+        multiset_hashes.append_to_transcript::<G1Projective>(&mut transcript);
         let (interleaved_read_write_hashes, interleaved_init_final_hashes) =
             TestProver::interleave_hashes(&NoPreprocessing, &multiset_hashes);
 
         let (_claims_rw, r_rw_verify) = proof_rw
-            .verify::<EdwardsProjective, _>(&interleaved_read_write_hashes, &mut transcript);
+            .verify::<G1Projective, _>(&interleaved_read_write_hashes, &mut transcript);
         assert_eq!(r_rw_verify, r_rw);
 
         let (_claims_if, r_if_verify) = proof_if
-            .verify::<EdwardsProjective, _>(&interleaved_init_final_hashes, &mut transcript);
+            .verify::<G1Projective, _>(&interleaved_init_final_hashes, &mut transcript);
         assert_eq!(r_if_verify, r_if);
     }
 
@@ -721,7 +721,7 @@ mod tests {
 
         struct FakeType();
         struct FakeOpeningProof();
-        impl StructuredOpeningProof<Fr, EdwardsProjective, Polys> for FakeOpeningProof {
+        impl StructuredOpeningProof<Fr, G1Projective, Polys> for FakeOpeningProof {
             fn open(_: &Polys, _: &Vec<Fr>) -> Self {
                 unimplemented!()
             }
@@ -745,7 +745,7 @@ mod tests {
             }
         }
 
-        impl BatchablePolynomials<EdwardsProjective> for Polys {
+        impl BatchablePolynomials<G1Projective> for Polys {
             type Commitment = FakeType;
             type BatchedPolynomials = FakeType;
 
@@ -755,14 +755,14 @@ mod tests {
             fn commit(
                 &self,
                 _batched_polys: &Self::BatchedPolynomials,
-                _generators: &PedersenGenerators<EdwardsProjective>,
+                _generators: &PedersenGenerators<G1Projective>,
             ) -> Self::Commitment {
                 unimplemented!()
             }
         }
 
         struct TestProver {}
-        impl MemoryCheckingProver<Fr, EdwardsProjective, Polys> for TestProver {
+        impl MemoryCheckingProver<Fr, G1Projective, Polys> for TestProver {
             type ReadWriteOpenings = FakeOpeningProof;
             type InitFinalOpenings = FakeOpeningProof;
 
@@ -923,28 +923,28 @@ mod tests {
 
         // Verify
         let mut transcript = Transcript::new(b"test_transcript");
-        let _gamma: Fr = <Transcript as ProofTranscript<EdwardsProjective>>::challenge_scalar(
+        let _gamma: Fr = <Transcript as ProofTranscript<G1Projective>>::challenge_scalar(
             &mut transcript,
             b"Memory checking gamma",
         );
-        let _tau: Fr = <Transcript as ProofTranscript<EdwardsProjective>>::challenge_scalar(
+        let _tau: Fr = <Transcript as ProofTranscript<G1Projective>>::challenge_scalar(
             &mut transcript,
             b"Memory checking tau",
         );
-        <Transcript as ProofTranscript<EdwardsProjective>>::append_protocol_name(
+        <Transcript as ProofTranscript<G1Projective>>::append_protocol_name(
             &mut transcript,
             TestProver::protocol_name(),
         );
-        multiset_hashes.append_to_transcript::<EdwardsProjective>(&mut transcript);
+        multiset_hashes.append_to_transcript::<G1Projective>(&mut transcript);
         let (interleaved_read_write_hashes, interleaved_init_final_hashes) =
             TestProver::interleave_hashes(&NoPreprocessing, &multiset_hashes);
 
         let (_claims_rw, r_rw_verify) = proof_rw
-            .verify::<EdwardsProjective, _>(&interleaved_read_write_hashes, &mut transcript);
+            .verify::<G1Projective, _>(&interleaved_read_write_hashes, &mut transcript);
         assert_eq!(r_rw_verify, r_rw);
 
         let (_claims_if, r_if_verify) = proof_if
-            .verify::<EdwardsProjective, _>(&interleaved_init_final_hashes, &mut transcript);
+            .verify::<G1Projective, _>(&interleaved_init_final_hashes, &mut transcript);
         assert_eq!(r_if_verify, r_if);
     }
 
@@ -971,7 +971,7 @@ mod tests {
 
         struct FakeType();
         struct FakeOpeningProof();
-        impl StructuredOpeningProof<Fr, EdwardsProjective, FlagPolys> for FakeOpeningProof {
+        impl StructuredOpeningProof<Fr, G1Projective, FlagPolys> for FakeOpeningProof {
             fn open(_: &FlagPolys, _: &Vec<Fr>) -> Self {
                 unimplemented!()
             }
@@ -995,7 +995,7 @@ mod tests {
             }
         }
 
-        impl BatchablePolynomials<EdwardsProjective> for FlagPolys {
+        impl BatchablePolynomials<G1Projective> for FlagPolys {
             type Commitment = FakeType;
             type BatchedPolynomials = FakeType;
 
@@ -1005,14 +1005,14 @@ mod tests {
             fn commit(
                 &self,
                 _batched_polys: &Self::BatchedPolynomials,
-                _generators: &PedersenGenerators<EdwardsProjective>,
+                _generators: &PedersenGenerators<G1Projective>,
             ) -> Self::Commitment {
                 unimplemented!()
             }
         }
 
         struct TestProver {}
-        impl MemoryCheckingProver<Fr, EdwardsProjective, FlagPolys> for TestProver {
+        impl MemoryCheckingProver<Fr, G1Projective, FlagPolys> for TestProver {
             type ReadWriteOpenings = FakeOpeningProof;
             type InitFinalOpenings = FakeOpeningProof;
 
@@ -1227,28 +1227,28 @@ mod tests {
 
         // Verify
         let mut transcript = Transcript::new(b"test_transcript");
-        let _gamma: Fr = <Transcript as ProofTranscript<EdwardsProjective>>::challenge_scalar(
+        let _gamma: Fr = <Transcript as ProofTranscript<G1Projective>>::challenge_scalar(
             &mut transcript,
             b"Memory checking gamma",
         );
-        let _tau: Fr = <Transcript as ProofTranscript<EdwardsProjective>>::challenge_scalar(
+        let _tau: Fr = <Transcript as ProofTranscript<G1Projective>>::challenge_scalar(
             &mut transcript,
             b"Memory checking tau",
         );
-        <Transcript as ProofTranscript<EdwardsProjective>>::append_protocol_name(
+        <Transcript as ProofTranscript<G1Projective>>::append_protocol_name(
             &mut transcript,
             TestProver::protocol_name(),
         );
-        multiset_hashes.append_to_transcript::<EdwardsProjective>(&mut transcript);
+        multiset_hashes.append_to_transcript::<G1Projective>(&mut transcript);
         let (interleaved_read_write_hashes, interleaved_init_final_hashes) =
             TestProver::interleave_hashes(&NoPreprocessing, &multiset_hashes);
 
         let (_claims_rw, r_rw_verify) = proof_rw
-            .verify::<EdwardsProjective, _>(&interleaved_read_write_hashes, &mut transcript);
+            .verify::<G1Projective, _>(&interleaved_read_write_hashes, &mut transcript);
         assert_eq!(r_rw_verify, r_rw);
 
         let (_claims_if, r_if_verify) = proof_if
-            .verify::<EdwardsProjective, _>(&interleaved_init_final_hashes, &mut transcript);
+            .verify::<G1Projective, _>(&interleaved_init_final_hashes, &mut transcript);
         assert_eq!(r_if_verify, r_if);
     }
 }

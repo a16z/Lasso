@@ -92,7 +92,7 @@ impl BytecodeRow {
     /// Packs the instruction's circuit flags and instruction flags into a single u64 bitvector.
     /// The layout is:
     ///     circuit flags || instruction flags
-    /// where instruction flags is a one-hot bitvector corresponding to the instruction's 
+    /// where instruction flags is a one-hot bitvector corresponding to the instruction's
     /// index in the `InstructionSet` enum.
     pub fn bitflags<InstructionSet>(instruction: &ELFInstruction) -> u64
     where
@@ -742,7 +742,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_curve25519::{EdwardsProjective, Fr};
+    use ark_bn254::{Fr, G1Projective};
     use std::collections::HashSet;
 
     fn get_difference<T: Clone + Eq + std::hash::Hash>(vec1: &[T], vec2: &[T]) -> Vec<T> {
@@ -765,7 +765,7 @@ mod tests {
         ];
 
         let preprocessing = BytecodePreprocessing::preprocess(program.clone());
-        let polys: BytecodePolynomials<Fr, EdwardsProjective> =
+        let polys: BytecodePolynomials<Fr, G1Projective> =
             BytecodePolynomials::new(&preprocessing, trace);
 
         let (gamma, tau) = (&Fr::from(100), &Fr::from(35));
@@ -794,13 +794,11 @@ mod tests {
             BytecodeRow::new(to_ram_address(3), 16u64, 16u64, 16u64, 16u64, 16u64),
             BytecodeRow::new(to_ram_address(2), 8u64, 8u64, 8u64, 8u64, 8u64),
         ];
-        let num_generators = BytecodePolynomials::<Fr, EdwardsProjective>::num_generators(
-            program.len(),
-            trace.len(),
-        );
+        let num_generators =
+            BytecodePolynomials::<Fr, G1Projective>::num_generators(program.len(), trace.len());
 
         let preprocessing = BytecodePreprocessing::preprocess(program.clone());
-        let polys: BytecodePolynomials<Fr, EdwardsProjective> =
+        let polys: BytecodePolynomials<Fr, G1Projective> =
             BytecodePolynomials::new(&preprocessing, trace);
 
         let mut transcript = Transcript::new(b"test_transcript");
@@ -830,12 +828,10 @@ mod tests {
             BytecodeRow::new(to_ram_address(4), 32u64, 32u64, 32u64, 32u64, 32u64),
         ];
 
-        let num_generators = BytecodePolynomials::<Fr, EdwardsProjective>::num_generators(
-            program.len(),
-            trace.len(),
-        );
+        let num_generators =
+            BytecodePolynomials::<Fr, G1Projective>::num_generators(program.len(), trace.len());
         let preprocessing = BytecodePreprocessing::preprocess(program.clone());
-        let polys: BytecodePolynomials<Fr, EdwardsProjective> =
+        let polys: BytecodePolynomials<Fr, G1Projective> =
             BytecodePolynomials::new(&preprocessing, trace);
         let generators = PedersenGenerators::new(num_generators, b"test");
         let commitments = polys.commit(&(), &generators);
@@ -865,7 +861,7 @@ mod tests {
             BytecodeRow::new(to_ram_address(2), 8u64, 8u64, 8u64, 8u64, 8u64),
             BytecodeRow::new(to_ram_address(5), 0u64, 0u64, 0u64, 0u64, 0u64), // no_op: shouldn't exist in pgoram
         ];
-        BytecodePolynomials::<Fr, EdwardsProjective>::validate_bytecode(&program, &trace);
+        BytecodePolynomials::<Fr, G1Projective>::validate_bytecode(&program, &trace);
     }
 
     #[test]
@@ -881,6 +877,6 @@ mod tests {
             BytecodeRow::new(to_ram_address(3), 16u64, 16u64, 16u64, 16u64, 16u64),
             BytecodeRow::new(to_ram_address(2), 8u64, 8u64, 8u64, 8u64, 8u64),
         ];
-        BytecodePolynomials::<Fr, EdwardsProjective>::validate_bytecode(&program, &trace);
+        BytecodePolynomials::<Fr, G1Projective>::validate_bytecode(&program, &trace);
     }
 }

@@ -50,7 +50,7 @@ impl JoltInstruction for BNEInstruction {
 
 #[cfg(test)]
 mod test {
-    use ark_curve25519::Fr;
+    use ark_bn254::Fr;
     use ark_std::{test_rng, Zero};
     use rand_chacha::rand_core::RngCore;
 

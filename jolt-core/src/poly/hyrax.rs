@@ -331,7 +331,7 @@ impl<const RATIO: usize, G: CurveGroup> BatchedHyraxOpeningProof<RATIO, G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_curve25519::EdwardsProjective as G1Projective;
+    use ark_bn254::G1Projective;
     use ark_std::One;
 
     #[test]

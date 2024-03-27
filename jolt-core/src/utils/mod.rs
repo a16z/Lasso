@@ -25,7 +25,7 @@ pub mod thread;
 /// - [0, 0, 0, 0, 0, 0, 0, 1]
 /// ```ignore
 /// use liblasso::utils::index_to_field_bitvector;
-/// # use ark_curve25519::Fr;
+/// # use ark_bn254::Fr;
 /// # use ark_std::{One, Zero};
 /// let zero = Fr::zero();
 /// let one = Fr::one();

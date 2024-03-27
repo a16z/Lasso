@@ -86,7 +86,7 @@ impl<F: PrimeField, const WORD_SIZE: usize> LassoSubtable<F> for SraSignSubtable
 
 #[cfg(test)]
 mod test {
-    use ark_curve25519::Fr;
+    use ark_bn254::Fr;
 
     use crate::{
         jolt::subtable::{sra_sign::SraSignSubtable, LassoSubtable},

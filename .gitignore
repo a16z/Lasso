@@ -20,6 +20,3 @@ Cargo.lock
 
 # tracing-chrome output
 trace-**.json
-
-# dhat output
-dhat-heap.json

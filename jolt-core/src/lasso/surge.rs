@@ -833,7 +833,7 @@ mod tests {
 
     use super::SurgePreprocessing;
     use crate::{jolt::instruction::xor::XORInstruction, lasso::surge::SurgeProof};
-    use ark_curve25519::{EdwardsProjective, Fr};
+    use ark_bn254::{G1Projective, Fr};
 
     #[test]
     fn e2e() {
@@ -848,7 +848,7 @@ mod tests {
 
         let mut transcript = Transcript::new(b"test_transcript");
         let preprocessing = SurgePreprocessing::preprocess();
-        let proof = SurgeProof::<Fr, EdwardsProjective, XORInstruction, C, M>::prove(
+        let proof = SurgeProof::<Fr, G1Projective, XORInstruction, C, M>::prove(
             &preprocessing,
             ops,
             &mut transcript,
@@ -872,7 +872,7 @@ mod tests {
 
         let mut transcript = Transcript::new(b"test_transcript");
         let preprocessing = SurgePreprocessing::preprocess();
-        let proof = SurgeProof::<Fr, EdwardsProjective, XORInstruction, C, M>::prove(
+        let proof = SurgeProof::<Fr, G1Projective, XORInstruction, C, M>::prove(
             &preprocessing,
             ops,
             &mut transcript,

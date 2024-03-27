@@ -13,10 +13,6 @@ use tracing_flame::{FlameLayer, FlushGuard};
 use tracing_subscriber::{self, fmt, fmt::format::FmtSpan, prelude::*};
 use tracing_texray::TeXRayLayer;
 
-#[cfg(feature = "dhat-heap")]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
-
 /// Search for a pattern in a file and display the lines that contain it.
 #[derive(Parser, Debug)]
 struct Cli {
@@ -79,9 +75,6 @@ enum Format {
 
 fn main() {
     let cli = Cli::parse();
-
-    #[cfg(feature = "dhat-heap")]
-    let _profiler = dhat::Profiler::new_heap();
 
     match cli.command {
         Commands::Trace(args) => trace(args),

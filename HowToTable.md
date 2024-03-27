@@ -102,7 +102,7 @@ The parity between these tables can be tested with the `materialization_mle_pari
 mod test {
     use super::*;
     use crate::materialization_mle_parity_test;
-    use ark_curve25519::Fr;
+    use ark_bn254::Fr;
 
       materialization_mle_parity_test!(lt_materialization_parity_test, LTSubtableStrategy, Fr, /* m= */ 16, /* NUM_SUBTABLES= */ 2);
 }

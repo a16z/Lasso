@@ -109,7 +109,7 @@ pub fn chunk_and_concatenate_for_shift(x: u64, y: u64, C: usize, log_M: usize) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_curve25519::Fr;
+    use ark_bn254::Fr;
 
     #[test]
     fn concatenate_lookups_test() {

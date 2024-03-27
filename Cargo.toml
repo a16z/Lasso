@@ -6,17 +6,18 @@ authors = [
     "Srinath Setty <srinath@microsoft.com>",
     # authors who contributed to the Arkworks Spartan fork
     "Zhenfei Zhang <zhenfei.zhang@hotmail.com>",
-    # authors who contributed to Lasso
+    # authors who contributed to Lasso/Jolt
     "Michael Zhu <mzhu@a16z.com>",
     "Sam Ragsdale <sragsdale@a16z.com>",
     "Noah Citron <ncitron@a16z.com>",
+    "Arasu Arun <arasu.arun5@gmail.com>",
 ]
 edition = "2021"
 description = "The lookup singularity. Based on Spartan; built on Arkworks."
 documentation = "https://github.com/a16z/lasso/README.md"
 repository = "https://github.com/a16z/lasso"
 license-file = "LICENSE"
-keywords = ["zkSNARKs", "cryptography", "proofs"]
+keywords = ["SNARK", "cryptography", "proofs"]
 
 [workspace]
 members = [

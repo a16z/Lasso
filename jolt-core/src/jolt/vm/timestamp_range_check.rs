@@ -867,7 +867,7 @@ mod tests {
     };
 
     use super::*;
-    use ark_curve25519::{EdwardsProjective, Fr};
+    use ark_bn254::{G1Projective, Fr};
     use common::rv_trace::{ELFInstruction, JoltDevice};
     use rand_core::SeedableRng;
 
@@ -886,7 +886,7 @@ mod tests {
         let mut transcript: Transcript = Transcript::new(b"test_transcript");
 
         let preprocessing = ReadWriteMemoryPreprocessing::preprocess(&bytecode);
-        let (rw_memory, read_timestamps): (ReadWriteMemory<Fr, EdwardsProjective>, _) =
+        let (rw_memory, read_timestamps): (ReadWriteMemory<Fr, G1Projective>, _) =
             ReadWriteMemory::new(
                 &JoltDevice::new(),
                 &preprocessing,

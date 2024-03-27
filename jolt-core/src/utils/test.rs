@@ -1,4 +1,4 @@
-use ark_curve25519::{EdwardsProjective as G1Projective, Fr};
+use ark_bn254::{Fr, G1Projective};
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
