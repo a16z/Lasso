@@ -2,7 +2,7 @@ use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_std::log2;
 use common::constants::NUM_R1CS_POLYS;
-use common::rv_trace::JoltDevice;
+use common::rv_trace::{JoltDevice, NUM_CIRCUIT_FLAGS};
 use itertools::max;
 use merlin::Transcript;
 use rayon::prelude::*;
@@ -15,7 +15,7 @@ use crate::lasso::memory_checking::{MemoryCheckingProver, MemoryCheckingVerifier
 use crate::poly::hyrax::{HyraxCommitment, HyraxGenerators};
 use crate::poly::pedersen::PedersenGenerators;
 use crate::poly::structured_poly::BatchablePolynomials;
-use crate::r1cs::snark::{R1CSUniqueCommitments, R1CSInputs, R1CSProof};
+use crate::r1cs::snark::{R1CSInputs, R1CSProof, R1CSUniqueCommitments};
 use crate::utils::errors::ProofVerifyError;
 use crate::utils::thread::drop_in_background_thread;
 use common::{
@@ -76,11 +76,10 @@ pub struct JoltCommitments<G: CurveGroup> {
     pub bytecode: BytecodeCommitment<G>,
     pub read_write_memory: MemoryCommitment<G>,
     pub instruction_lookups: InstructionCommitment<G>,
-    pub r1cs: R1CSUniqueCommitments<G>
+    pub r1cs: R1CSUniqueCommitments<G>,
 }
 
-pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, const M: usize>
-{
+pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, const M: usize> {
     type InstructionSet: JoltInstructionSet;
     type Subtables: JoltSubtableSet<F>;
 
@@ -217,7 +216,7 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
             bytecode: bytecode_commitment,
             read_write_memory: memory_commitment,
             instruction_lookups: instruction_lookups_commitment,
-            r1cs: r1cs_commitment
+            r1cs: r1cs_commitment,
         };
 
         let jolt_proof = JoltProof {
@@ -384,7 +383,6 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
         jolt_polynomials: &JoltPolynomials<F, G>,
         transcript: &mut Transcript,
     ) -> (R1CSProof<F, G>, R1CSUniqueCommitments<G>) {
-        let N_FLAGS = 17;
         let trace_len = trace.len();
         let padded_trace_len = trace_len.next_power_of_two();
 
@@ -407,15 +405,15 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
         // Obtain circuit_flags_packed to prog_v_rw. Pack them in little-endian order.
         let span = tracing::span!(tracing::Level::INFO, "pack_flags");
         let _enter = span.enter();
-        let precomputed_powers: Vec<F> = (0..N_FLAGS)
+        let precomputed_powers: Vec<F> = (0..NUM_CIRCUIT_FLAGS)
             .map(|i| F::from_u64(2u64.pow(i as u32)).unwrap())
             .collect();
 
         let mut packed_flags: Vec<F> = circuit_flags
-            .par_chunks(N_FLAGS)
+            .par_chunks(NUM_CIRCUIT_FLAGS)
             .map(|x| {
                 x.iter().enumerate().fold(F::zero(), |packed, (i, flag)| {
-                    packed + *flag * precomputed_powers[N_FLAGS - 1 - i]
+                    packed + *flag * precomputed_powers[NUM_CIRCUIT_FLAGS - 1 - i]
                 })
             })
             .collect();
@@ -454,9 +452,9 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
         // Derive circuit flags
         let span = tracing::span!(tracing::Level::INFO, "circuit_flags");
         let _enter = span.enter();
-        let mut circuit_flags_bits = vec![F::zero(); padded_trace_len * N_FLAGS];
+        let mut circuit_flags_bits = vec![F::zero(); padded_trace_len * NUM_CIRCUIT_FLAGS];
         circuit_flags
-            .chunks(N_FLAGS)
+            .chunks(NUM_CIRCUIT_FLAGS)
             .enumerate()
             .for_each(|(chunk_index, chunk)| {
                 chunk.iter().enumerate().for_each(|(trace_index, &flag)| {
@@ -500,7 +498,7 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
         let circuit_flags_comm = commit_to_chunks(&circuit_flags_bits);
         drop(_guard);
 
-        // Flattening this out into a Vec<F> and chunking into PADDED_TRACE_LEN-sized chunks 
+        // Flattening this out into a Vec<F> and chunking into PADDED_TRACE_LEN-sized chunks
         // will be the exact witness vector to feed into the R1CS
         // after pre-pending IO and appending the AUX
         let inputs: R1CSInputs<F> = R1CSInputs::new(
@@ -518,13 +516,15 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
             circuit_flags_bits,
         );
 
-        let (key, witness_segments, io_aux_commitments) = R1CSProof::<F,G>::compute_witness_commit(
-            32, 
-            C, 
-            padded_trace_len, 
-            inputs, 
-            &hyrax_generators)
-        .expect("R1CSProof setup failed");
+        let (key, witness_segments, io_aux_commitments) =
+            R1CSProof::<F, G>::compute_witness_commit(
+                32,
+                C,
+                padded_trace_len,
+                inputs,
+                &hyrax_generators,
+            )
+            .expect("R1CSProof setup failed");
 
         let r1cs_commitments = R1CSUniqueCommitments::new(
             io_aux_commitments,
@@ -533,17 +533,12 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
             lookup_outputs_comms,
             packed_flags_comm,
             circuit_flags_comm,
-            hyrax_generators
+            hyrax_generators,
         );
 
         r1cs_commitments.append_to_transcript(transcript);
 
-        let proof  = R1CSProof::prove(
-            key,
-            witness_segments,
-            transcript
-        )
-        .expect("proof failed");
+        let proof = R1CSProof::prove(key, witness_segments, transcript).expect("proof failed");
 
         (proof, r1cs_commitments)
     }
