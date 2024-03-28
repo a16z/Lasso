@@ -80,7 +80,6 @@ pub struct R1CSInputs<F: PrimeField> {
     padded_trace_len: usize,
     bytecode_a: Vec<F>,
     bytecode_v: Vec<F>,
-    packed_flags: Vec<F>,
     memreg_a_rw: Vec<F>,
     memreg_v_reads: Vec<F>,
     memreg_v_writes: Vec<F>,
@@ -97,7 +96,6 @@ impl<F: PrimeField> R1CSInputs<F> {
     padded_trace_len: usize,
     bytecode_a: Vec<F>,
     bytecode_v: Vec<F>,
-    packed_flags: Vec<F>,
     memreg_a_rw: Vec<F>,
     memreg_v_reads: Vec<F>,
     memreg_v_writes: Vec<F>,
@@ -110,7 +108,6 @@ impl<F: PrimeField> R1CSInputs<F> {
 
     assert!(bytecode_a.len() % padded_trace_len == 0);
     assert!(bytecode_v.len() % padded_trace_len == 0);
-    assert!(packed_flags.len() % padded_trace_len == 0);
     assert!(memreg_a_rw.len() % padded_trace_len == 0);
     assert!(memreg_v_reads.len() % padded_trace_len == 0);
     assert!(memreg_v_writes.len() % padded_trace_len == 0);
@@ -124,7 +121,6 @@ impl<F: PrimeField> R1CSInputs<F> {
       padded_trace_len,
       bytecode_a,
       bytecode_v,
-      packed_flags,
       memreg_a_rw,
       memreg_v_reads,
       memreg_v_writes,
@@ -164,7 +160,6 @@ impl<F: PrimeField> R1CSInputs<F> {
 
       push_to_step(&self.bytecode_a, &mut step);
       push_to_step(&self.bytecode_v, &mut step);
-      push_to_step(&self.packed_flags, &mut step);
       push_to_step(&self.memreg_a_rw, &mut step);
       push_to_step(&self.memreg_v_reads, &mut step);
       push_to_step(&self.memreg_v_writes, &mut step);
@@ -191,7 +186,6 @@ impl<F: PrimeField> R1CSInputs<F> {
     let trace_len = self.trace_len();
     self.bytecode_a.len() / trace_len
       + self.bytecode_v.len() / trace_len
-      + self.packed_flags.len() / trace_len
       + self.memreg_a_rw.len() / trace_len
       + self.memreg_v_reads.len() / trace_len
       + self.memreg_v_writes.len() / trace_len
@@ -208,7 +202,6 @@ impl<F: PrimeField> R1CSInputs<F> {
     let mut chunks: Vec<Vec<F>> = Vec::new();
     chunks.par_extend(self.bytecode_a.par_chunks(padded_trace_len).map(|chunk| chunk.to_vec()));
     chunks.par_extend(self.bytecode_v.par_chunks(padded_trace_len).map(|chunk| chunk.to_vec()));
-    chunks.par_extend(self.packed_flags.par_chunks(padded_trace_len).map(|chunk| chunk.to_vec()));
     chunks.par_extend(self.memreg_a_rw.par_chunks(padded_trace_len).map(|chunk| chunk.to_vec()));
     chunks.par_extend(self.memreg_v_reads.par_chunks(padded_trace_len).map(|chunk| chunk.to_vec()));
     chunks.par_extend(self.memreg_v_writes.par_chunks(padded_trace_len).map(|chunk| chunk.to_vec()));
@@ -234,7 +227,6 @@ pub struct R1CSUniqueCommitments<G: CurveGroup> {
   chunks_x: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
   chunks_y: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
   lookup_outputs: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
-  packed_flags: HyraxCommitment<NUM_R1CS_POLYS, G>,
   circuit_flags: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
 
   generators: HyraxGenerators<NUM_R1CS_POLYS, G>
@@ -246,7 +238,6 @@ impl<G: CurveGroup> R1CSUniqueCommitments<G> {
         chunks_x: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
         chunks_y: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
         lookup_outputs: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
-        packed_flags: HyraxCommitment<NUM_R1CS_POLYS, G>,
         circuit_flags: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
         generators: HyraxGenerators<NUM_R1CS_POLYS, G>,
     ) -> Self {
@@ -256,7 +247,6 @@ impl<G: CurveGroup> R1CSUniqueCommitments<G> {
             chunks_x,
             chunks_y,
             lookup_outputs,
-            packed_flags,
             circuit_flags,
             generators,
         }
@@ -269,7 +259,6 @@ impl<G: CurveGroup> R1CSUniqueCommitments<G> {
       self.chunks_x.iter().for_each(|comm| comm.append_to_transcript(b"chunk_x", transcript));
       self.chunks_y.iter().for_each(|comm| comm.append_to_transcript(b"chunk_y", transcript));
       self.lookup_outputs.iter().for_each(|comm| comm.append_to_transcript(b"lookup_outputs", transcript));
-      self.packed_flags.append_to_transcript(b"packed_flags", transcript);
       self.circuit_flags.iter().for_each(|comm| comm.append_to_transcript(b"circuit_flags", transcript));
     }
 }
@@ -359,13 +348,11 @@ impl<F: PrimeField, G: CurveGroup<ScalarField = F>> R1CSProof<F, G> {
       combined_commitments.extend(r1cs_commitments.internal_commitments.io.iter());
 
       combined_commitments.push(&bytecode_read_write_commitments[0]); // a
-      combined_commitments.push(&bytecode_read_write_commitments[2]); // opcode
+      combined_commitments.push(&bytecode_read_write_commitments[2]); // op_flags_packed
       combined_commitments.push(&bytecode_read_write_commitments[3]); // rd
       combined_commitments.push(&bytecode_read_write_commitments[4]); // rs1
       combined_commitments.push(&bytecode_read_write_commitments[5]); // rs2
       combined_commitments.push(&bytecode_read_write_commitments[6]); // imm
-
-      combined_commitments.push(&r1cs_commitments.packed_flags);
 
       combined_commitments.extend(ram_a_v_commitments.iter());
 

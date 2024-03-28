@@ -3,11 +3,14 @@
 use ark_ff::PrimeField; 
 use smallvec::{smallvec, SmallVec};
 use rayon::prelude::*;
-use common::constants::{RAM_START_ADDRESS, RAM_WITNESS_OFFSET};
+use common::{constants::{RAM_START_ADDRESS, RAM_WITNESS_OFFSET}, rv_trace::NUM_CIRCUIT_FLAGS};
+use strum::EnumCount;
+
+use crate::jolt::vm::rv32i_vm::RV32I;
 
 /* Compiler Variables */
 const C: usize = 4; 
-const N_FLAGS: usize = 17; 
+const N_FLAGS: usize = NUM_CIRCUIT_FLAGS + RV32I::COUNT; 
 const W: usize = 32;
 const LOG_M: usize = 16; 
 const MEMORY_ADDRESS_OFFSET: usize = (RAM_START_ADDRESS - RAM_WITNESS_OFFSET) as usize; 
@@ -47,7 +50,7 @@ const INPUT_SIZES: &[(InputType, usize)] = &[
     (InputType::OutputState,     STATE_LENGTH),
     (InputType::InputState,      STATE_LENGTH),
     (InputType::ProgARW,         1),
-    (InputType::ProgVRW,         6),
+    (InputType::ProgVRW,         5),
     (InputType::MemregARW,       7),
     (InputType::MemregVReads,    7),
     (InputType::MemregVWrites,   7),
@@ -280,12 +283,11 @@ impl R1CSBuilder {
 
     pub fn get_matrices(instance: &mut R1CSBuilder) {
         // Parse the input indices 
-        let opcode = GET_INDEX(InputType::ProgVRW, 0);
+        let op_flags_packed= GET_INDEX(InputType::ProgVRW, 0);
         let rd = GET_INDEX(InputType::ProgVRW, 1);
         let rs1 = GET_INDEX(InputType::ProgVRW, 2);
         let rs2 = GET_INDEX(InputType::ProgVRW, 3);
         let immediate_before_processing = GET_INDEX(InputType::ProgVRW, 4);
-        let op_flags_packed = GET_INDEX(InputType::ProgVRW, 5);
 
         let is_load_instr: usize = GET_INDEX(InputType::OpFlags, 2);
         let is_store_instr: usize = GET_INDEX(InputType::OpFlags, 3);
@@ -538,12 +540,11 @@ impl R1CSBuilder {
 
     pub fn calculate_aux<F: PrimeField>(inputs: &mut Vec<F>) {
         // Parse the input indices 
-        let opcode = GET_INDEX(InputType::ProgVRW, 0);
+        let op_flags_packed = GET_INDEX(InputType::ProgVRW, 0);
         let rd = GET_INDEX(InputType::ProgVRW, 1);
         let rs1 = GET_INDEX(InputType::ProgVRW, 2);
         let rs2 = GET_INDEX(InputType::ProgVRW, 3);
         let immediate_before_processing = GET_INDEX(InputType::ProgVRW, 4);
-        let op_flags_packed = GET_INDEX(InputType::ProgVRW, 5);
 
         let is_load_instr: usize = GET_INDEX(InputType::OpFlags, 2);
         let is_store_instr: usize = GET_INDEX(InputType::OpFlags, 3);

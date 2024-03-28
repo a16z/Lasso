@@ -229,7 +229,7 @@ fn prove_example<T: Serialize>(
     let task = move || {
         let bytecode = program.decode();
         let (io_device, bytecode_trace, instruction_trace, memory_trace, circuit_flags) =
-            program.trace();
+            program.trace::<_, RV32I>();
 
         let preprocessing: crate::jolt::vm::JoltPreprocessing<
             ark_ff::Fp<ark_ff::MontBackend<ark_bn254::FrConfig, 4>, 4>,
