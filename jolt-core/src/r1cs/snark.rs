@@ -8,6 +8,7 @@ use common::constants::{NUM_R1CS_POLYS, RAM_START_ADDRESS};
 use ark_ff::PrimeField;
 use merlin::Transcript;
 use rayon::prelude::*;
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 
 /// Reorder and drop first element [[a1, b1, c1], [a2, b2, c2]] => [[a2], [b2], [c2]]
 #[tracing::instrument(skip_all)]
@@ -222,12 +223,14 @@ impl<F: PrimeField> R1CSInputs<F> {
 }
 
 /// Derived elements exclusive to the R1CS circuit.
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct R1CSInternalCommitments<G: CurveGroup> {
   io: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
   aux: Vec<HyraxCommitment<NUM_R1CS_POLYS, G>>,
 }
 
 /// Commitments unique to R1CS.
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct R1CSUniqueCommitments<G: CurveGroup> {
   internal_commitments: R1CSInternalCommitments<G>,
 
@@ -274,6 +277,7 @@ impl<G: CurveGroup> R1CSUniqueCommitments<G> {
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct R1CSProof<F: PrimeField, G: CurveGroup<ScalarField = F>>  {
   pub key: UniformSpartanKey<F>,
   proof: UniformSpartanProof<F, G>,

@@ -13,12 +13,14 @@ use crate::utils::transcript::ProofTranscript;
 
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use itertools::interleave;
 use merlin::Transcript;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::iter::zip;
 use std::marker::PhantomData;
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct MultisetHashes<F: PrimeField> {
     /// Multiset hash of "read" tuples
     pub read_hashes: Vec<F>,
@@ -58,10 +60,11 @@ impl<F: PrimeField> MultisetHashes<F> {
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct MemoryCheckingProof<G, Polynomials, ReadWriteOpenings, InitFinalOpenings>
 where
     G: CurveGroup,
-    Polynomials: BatchablePolynomials<G> + ?Sized,
+    Polynomials: BatchablePolynomials<G>,
     ReadWriteOpenings: StructuredOpeningProof<G::ScalarField, G, Polynomials>,
     InitFinalOpenings: StructuredOpeningProof<G::ScalarField, G, Polynomials>,
 {

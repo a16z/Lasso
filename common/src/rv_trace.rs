@@ -1,4 +1,5 @@
 use crate::constants::{MEMORY_OPS_PER_INSTRUCTION, PANIC_ADDRESS, INPUT_START_ADDRESS, OUTPUT_START_ADDRESS};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use serde::{Deserialize, Serialize};
 use strum_macros::FromRepr;
 
@@ -646,7 +647,7 @@ impl RV32IM {
 /// all reads from the reserved memory address space for program inputs and all writes
 /// to the reserved memory address space for program outputs.
 /// The inputs and outputs are part of the public inputs to the proof.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, CanonicalSerialize, CanonicalDeserialize)]
 pub struct JoltDevice {
     pub inputs: Vec<u8>,
     pub outputs: Vec<u8>,

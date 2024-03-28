@@ -1,5 +1,6 @@
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use merlin::Transcript;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::marker::{PhantomData, Sync};
@@ -40,6 +41,7 @@ pub struct BatchedSurgePolynomials<F: PrimeField> {
     pub batched_E: DensePolynomial<F>,
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct SurgeCommitment<G: CurveGroup> {
     pub dim_read_commitment: ConcatenatedPolynomialCommitment<G>,
     pub final_commitment: ConcatenatedPolynomialCommitment<G>,
@@ -137,6 +139,7 @@ impl<F: PrimeField, G: CurveGroup<ScalarField = F>> StructuredOpeningProof<F, G,
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct SurgeReadWriteOpenings<F>
 where
     F: PrimeField,
@@ -146,6 +149,7 @@ where
     E_poly_openings: Vec<F>, // NUM_MEMORIES-sized
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct SurgeReadWriteOpeningProof<F, G>
 where
     F: PrimeField,
@@ -238,6 +242,7 @@ where
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct SurgeFinalOpenings<F, Instruction, const C: usize, const M: usize>
 where
     F: PrimeField,

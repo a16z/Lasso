@@ -1,5 +1,6 @@
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use merlin::Transcript;
 
 use super::pedersen::PedersenGenerators;
@@ -12,7 +13,7 @@ use crate::{
 /// Encapsulates the pattern of a collection of related polynomials (e.g. those used to
 /// prove instruction lookups in Jolt) that can be "batched" for more efficient
 /// commitments/openings.
-pub trait BatchablePolynomials<G: CurveGroup> {
+pub trait BatchablePolynomials<G: CurveGroup>: Send + Sync + Sized {
     /// The batched form of these polynomials.
     type BatchedPolynomials;
     /// The batched commitment to these polynomials.
@@ -33,14 +34,14 @@ pub trait BatchablePolynomials<G: CurveGroup> {
 /// Note that there may be a one-to-many mapping from `BatchablePolynomials` to `StructuredOpeningProof`:
 /// different subset of the same polynomials may be opened at different points, resulting in
 /// different opening proofs.
-pub trait StructuredOpeningProof<F, G, Polynomials>
+pub trait StructuredOpeningProof<F, G, Polynomials>: Sync + CanonicalSerialize + CanonicalDeserialize
 where
     F: PrimeField,
     G: CurveGroup<ScalarField = F>,
     Polynomials: BatchablePolynomials<G> + ?Sized,
 {
     type Preprocessing = NoPreprocessing;
-    type Proof = ConcatenatedPolynomialOpeningProof<G>;
+    type Proof: Sync + CanonicalSerialize + CanonicalDeserialize = ConcatenatedPolynomialOpeningProof<G>;
 
     /// Evaluates each fo the given `polynomials` at the given `opening_point`.
     fn open(polynomials: &Polynomials, opening_point: &Vec<F>) -> Self;

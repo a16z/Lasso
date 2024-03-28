@@ -1,6 +1,7 @@
 use std::cmp::max;
 
 use ark_ff::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use rayon::prelude::*;
 
 use crate::utils::mul_0_1_optimized;
@@ -8,7 +9,7 @@ use crate::utils::mul_0_1_optimized;
 use super::spartan::{IndexablePoly, SpartanError};
 
 /// A type that holds the shape of the R1CS matrices
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct R1CSShape<F: PrimeField> {
     pub(crate) num_cons: usize,
     pub(crate) num_vars: usize,

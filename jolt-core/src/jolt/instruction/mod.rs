@@ -12,7 +12,7 @@ use common::rv_trace::ELFInstruction;
 use std::fmt::Debug;
 
 #[enum_dispatch]
-pub trait JoltInstruction: Sync + Clone + Debug {
+pub trait JoltInstruction: Clone + Debug + Send + Sync {
     fn operands(&self) -> [u64; 2];
     /// Combines `vals` according to the instruction's "collation" polynomial `g`.
     /// If `vals` are subtable entries (as opposed to MLE evaluations), this function returns the
@@ -70,7 +70,7 @@ pub trait JoltInstruction: Sync + Clone + Debug {
 }
 
 pub trait JoltInstructionSet:
-    JoltInstruction + IntoEnumIterator + EnumCount + for<'a> TryFrom<&'a ELFInstruction>
+    JoltInstruction + IntoEnumIterator + EnumCount + for<'a> TryFrom<&'a ELFInstruction> + Send + Sync
 {
     fn enum_index(instruction: &Self) -> usize {
         unsafe { *<*const _>::from(instruction).cast::<u8>() as usize }

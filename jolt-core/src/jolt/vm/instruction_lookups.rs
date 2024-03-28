@@ -89,6 +89,7 @@ pub struct BatchedInstructionPolynomials<F: PrimeField> {
 }
 
 /// Commitments to BatchedInstructionPolynomials.
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct InstructionCommitment<G: CurveGroup> {
     pub read_write_generators: HyraxGenerators<NUM_R1CS_POLYS, G>,
     /// Commitments to dim_i and read_cts_i polynomials.
@@ -218,6 +219,7 @@ where
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct InstructionReadWriteOpenings<F>
 where
     F: PrimeField,
@@ -334,6 +336,7 @@ where
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct InstructionFinalOpenings<F, Subtables>
 where
     F: PrimeField,
@@ -748,6 +751,7 @@ where
 }
 
 /// Proof of instruction lookups for a single Jolt program execution.
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct InstructionLookupsProof<const C: usize, const M: usize, F, G, InstructionSet, Subtables>
 where
     F: PrimeField,
@@ -756,10 +760,7 @@ where
     InstructionSet: JoltInstructionSet,
 {
     _instructions: PhantomData<InstructionSet>,
-    /// "Primary" sumcheck, i.e. proving \sum_x \tilde{eq}(r, x) * \sum_i flag_i(x) * g_i(E_1(x), ..., E_\alpha(x))
     primary_sumcheck: PrimarySumcheck<F, G>,
-
-    /// Memory checking proof, showing that E_i polynomials are well-formed.
     memory_checking: MemoryCheckingProof<
         G,
         InstructionPolynomials<F, G>,
@@ -768,6 +769,7 @@ where
     >,
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct PrimarySumcheck<F: PrimeField, G: CurveGroup<ScalarField = F>> {
     sumcheck_proof: SumcheckInstanceProof<F>,
     num_rounds: usize,

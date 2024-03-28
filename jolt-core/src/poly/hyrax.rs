@@ -6,12 +6,12 @@ use crate::utils::math::Math;
 use crate::utils::transcript::{AppendToTranscript, ProofTranscript};
 use crate::utils::{compute_dotproduct, mul_0_1_optimized};
 use ark_ec::CurveGroup;
-use ark_serialize::*;
 use ark_std::{One, Zero};
 use merlin::Transcript;
 use num_integer::Roots;
 use rayon::prelude::*;
 use tracing::trace_span;
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 
 #[cfg(feature = "ark-msm")]
 use ark_ec::VariableBaseMSM;
@@ -31,7 +31,7 @@ pub fn matrix_dimensions(num_vars: usize, matrix_aspect_ratio: usize) -> (usize,
     (col_size, row_size)
 }
 
-#[derive(Clone)]
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct HyraxGenerators<const RATIO: usize, G: CurveGroup> {
     pub gens: PedersenGenerators<G>,
 }
@@ -45,7 +45,7 @@ impl<const RATIO: usize, G: CurveGroup> HyraxGenerators<RATIO, G> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct HyraxCommitment<const RATIO: usize, G: CurveGroup> {
     row_commitments: Vec<G>,
 }

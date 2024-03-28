@@ -32,6 +32,7 @@ use common::constants::{
 };
 use common::rv_trace::{ELFInstruction, JoltDevice, MemoryOp, RV32IM};
 use common::to_ram_address;
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 
 use super::timestamp_range_check::TimestampValidityProof;
 
@@ -119,6 +120,7 @@ pub fn random_memory_trace(
     memory_trace
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct ReadWriteMemoryProof<F, G>
 where
     F: PrimeField,
@@ -449,6 +451,7 @@ pub struct BatchedMemoryPolynomials<F: PrimeField> {
     batched_init_final: DensePolynomial<F>,
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct MemoryCommitment<G: CurveGroup> {
     /// Generators for a_read_write, v_read, v_write
     pub read_write_generators: HyraxGenerators<NUM_R1CS_POLYS, G>,
@@ -514,6 +517,7 @@ where
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct MemoryReadWriteOpenings<F, G>
 where
     F: PrimeField,
@@ -531,6 +535,7 @@ where
     pub t_write_opening: [F; MEMORY_OPS_PER_INSTRUCTION],
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct MemoryReadWriteOpeningProof<G: CurveGroup> {
     a_v_opening_proof: BatchedHyraxOpeningProof<NUM_R1CS_POLYS, G>,
     t_opening_proof: ConcatenatedPolynomialOpeningProof<G>,
@@ -649,6 +654,7 @@ where
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct MemoryInitFinalOpenings<F>
 where
     F: PrimeField,

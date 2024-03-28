@@ -1,5 +1,6 @@
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use common::constants::MEMORY_OPS_PER_INSTRUCTION;
 use itertools::interleave;
 use merlin::Transcript;
@@ -201,6 +202,7 @@ where
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct RangeCheckOpenings<F, G>
 where
     F: PrimeField,
@@ -215,6 +217,7 @@ where
     identity_poly_opening: Option<F>,
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct RangeCheckOpeningProof<G>
 where
     G: CurveGroup,
@@ -589,6 +592,7 @@ where
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct TimestampValidityProof<F, G>
 where
     F: PrimeField,

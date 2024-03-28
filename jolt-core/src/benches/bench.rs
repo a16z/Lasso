@@ -6,6 +6,7 @@ use crate::jolt::vm::rv32i_vm::{RV32IJoltVM, C, M, RV32I};
 use crate::jolt::vm::Jolt;
 use crate::poly::dense_mlpoly::bench::{init_commit_bench, run_commit_bench};
 use ark_bn254::{Fr, G1Projective};
+use ark_serialize::CanonicalSerialize;
 use common::rv_trace::{ELFInstruction, JoltDevice};
 use criterion::black_box;
 use merlin::Transcript;
@@ -218,6 +219,16 @@ fn sha3() -> Vec<(tracing::Span, Box<dyn FnOnce()>)> {
     prove_example("sha3-guest", &vec![5u8; 2048])
 }
 
+fn serialize_and_print_size(name: &str, item: &impl ark_serialize::CanonicalSerialize) {
+    use std::fs::File;
+    let mut file = File::create("temp_file").unwrap();
+    item.serialize_compressed(&mut file).unwrap();
+    let file_size_bytes = file.metadata().unwrap().len();
+    let file_size_kb = file_size_bytes as f64 / 1024.0;
+    let file_size_mb = file_size_kb / 1024.0;
+    println!("{:<30} : {:.3} MB", name, file_size_mb);
+}
+
 fn prove_example<T: Serialize>(
     example_name: &str,
     input: &T,
@@ -245,6 +256,15 @@ fn prove_example<T: Serialize>(
             circuit_flags,
             preprocessing.clone(),
         );
+
+        println!("Proof sizing:");
+        serialize_and_print_size("jolt_commitments", &jolt_commitments);
+        serialize_and_print_size("jolt_proof", &jolt_proof);
+        serialize_and_print_size(" jolt_proof.r1cs", &jolt_proof.r1cs);
+        serialize_and_print_size(" jolt_proof.bytecode", &jolt_proof.bytecode);
+        serialize_and_print_size(" jolt_proof.read_write_memory", &jolt_proof.read_write_memory);
+        serialize_and_print_size(" jolt_proof.instruction_lookups", &jolt_proof.instruction_lookups);
+
         let verification_result = RV32IJoltVM::verify(preprocessing, jolt_proof, jolt_commitments);
         assert!(
             verification_result.is_ok(),

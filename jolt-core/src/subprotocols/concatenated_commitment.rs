@@ -13,6 +13,8 @@ use crate::{
     },
 };
 
+
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct ConcatenatedPolynomialCommitment<G: CurveGroup> {
     pub generators: HyraxGenerators<1, G>,
     pub joint_commitment: HyraxCommitment<1, G>,

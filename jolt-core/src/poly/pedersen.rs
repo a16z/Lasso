@@ -4,6 +4,7 @@ use digest::{ExtendableOutput, Input};
 use rand_chacha::ChaCha20Rng;
 use sha3::Shake256;
 use std::io::Read;
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 
 #[cfg(feature = "ark-msm")]
 use ark_ec::VariableBaseMSM;
@@ -11,7 +12,7 @@ use ark_ec::VariableBaseMSM;
 #[cfg(not(feature = "ark-msm"))]
 use crate::msm::VariableBaseMSM;
 
-#[derive(Clone)]
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PedersenGenerators<G: CurveGroup> {
     pub generators: Vec<G>,
 }
