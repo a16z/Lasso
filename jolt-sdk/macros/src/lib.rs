@@ -3,7 +3,10 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, AttributeArgs, Ident, ItemFn, Meta, MetaNameValue, NestedMeta, PatType, ReturnType, Type};
+use syn::{
+    parse_macro_input, AttributeArgs, Ident, ItemFn, Meta, MetaNameValue, NestedMeta, PatType,
+    ReturnType, Type,
+};
 
 use common::constants::{
     INPUT_END_ADDRESS, INPUT_START_ADDRESS, OUTPUT_END_ADDRESS, OUTPUT_START_ADDRESS, PANIC_ADDRESS,
@@ -35,13 +38,15 @@ impl MacroBuilder {
     fn build(&self) -> TokenStream {
         let build_fn = self.make_build_fn();
         let execute_fn = self.make_execute_function();
-        let preprocess_fn = self.make_preproccess_func();
+        let analyze_fn = self.make_analyze_function();
+        let preprocess_fn = self.make_preprocess_func();
         let prove_fn = self.make_prove_func();
         let main_fn = self.make_main_func();
 
         quote! {
             #build_fn
             #execute_fn
+            #analyze_fn
             #preprocess_fn
             #prove_fn
             #main_fn
@@ -60,7 +65,6 @@ impl MacroBuilder {
         let preprocess_fn_name = Ident::new(&format!("preprocess_{}", fn_name), fn_name.span());
         let prove_fn_name = Ident::new(&format!("prove_{}", fn_name), fn_name.span());
         let imports = self.make_imports();
-        
 
         quote! {
             #[cfg(not(feature = "guest"))]
@@ -94,22 +98,50 @@ impl MacroBuilder {
         }
     }
 
-     fn make_execute_function(&self) -> TokenStream2 {
-         let fn_name = self.get_func_name();
-         let execute_fn_name = Ident::new(&format!("execute_{}", fn_name), fn_name.span());
-         let inputs = &self.func.sig.inputs;
-         let output = &self.func.sig.output;
-         let body = &self.func.block;
+    fn make_execute_function(&self) -> TokenStream2 {
+        let fn_name = self.get_func_name();
+        let execute_fn_name = Ident::new(&format!("execute_{}", fn_name), fn_name.span());
+        let inputs = &self.func.sig.inputs;
+        let output = &self.func.sig.output;
+        let body = &self.func.block;
 
-         quote! {
+        quote! {
              #[cfg(not(feature = "guest"))]
              pub fn #execute_fn_name(#inputs) #output {
                  #body
              }
         }
-     }
+    }
 
-    fn make_preproccess_func(&self) -> TokenStream2 {
+    fn make_analyze_function(&self) -> TokenStream2 {
+        let set_mem_size = self.make_set_memory_size();
+        let guest_name = self.get_guest_name();
+        let imports = self.make_imports();
+
+        let fn_name = self.get_func_name();
+        let analyze_fn_name = Ident::new(&format!("analyze_{}", fn_name), fn_name.span());
+        let inputs = &self.func.sig.inputs;
+        let set_program_args = self.func_args.iter().map(|(name, _)| {
+            quote! {
+                program.set_input(&#name);
+            }
+        });
+
+        quote! {
+             #[cfg(not(feature = "guest"))]
+             pub fn #analyze_fn_name(#inputs) {
+                #imports
+
+                let mut program = Program::new(#guest_name);
+                #set_mem_size
+                #(#set_program_args;)*
+
+                program.trace_analyze();
+             }
+        }
+    }
+
+    fn make_preprocess_func(&self) -> TokenStream2 {
         let set_mem_size = self.make_set_memory_size();
         let guest_name = self.get_guest_name();
         let imports = self.make_imports();
@@ -129,7 +161,7 @@ impl MacroBuilder {
                 let bytecode = program.decode();
 
                 // TODO(moodlezoup): Feed in size parameters via macro
-                let preprocessing: JoltPreprocessing<jolt_sdk::F, jolt_sdk::G> = 
+                let preprocessing: JoltPreprocessing<jolt_sdk::F, jolt_sdk::G> =
                     RV32IJoltVM::preprocess(
                         bytecode,
                         1 << 20,
@@ -217,7 +249,7 @@ impl MacroBuilder {
         let args = &self.func_args;
         let args_fetch = args.iter().map(|(name, ty)| {
             quote! {
-                let (#name, input_slice) = 
+                let (#name, input_slice) =
                     jolt_sdk::postcard::take_from_bytes::<#ty>(input_slice).unwrap();
             }
         });
@@ -314,7 +346,7 @@ impl MacroBuilder {
                     quote! {
                         program.set_memory_size(#lit);
                     }
-                },
+                }
                 _ => panic!("expected integer literal"),
             }
         } else if self.attr.len() > 1 {
@@ -326,10 +358,10 @@ impl MacroBuilder {
 
     fn get_prove_output_type(&self) -> TokenStream2 {
         match &self.func.sig.output {
-            ReturnType::Default => quote! { 
-                ((), jolt_sdk::Proof) 
+            ReturnType::Default => quote! {
+                ((), jolt_sdk::Proof)
             },
-            ReturnType::Type(_, ty) => quote! { 
+            ReturnType::Type(_, ty) => quote! {
                 (#ty, jolt_sdk::Proof)
             },
         }
