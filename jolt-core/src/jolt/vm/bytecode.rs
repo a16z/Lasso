@@ -366,7 +366,7 @@ where
             &self.v_read_write[3],
             &self.v_read_write[4],
         ]
-        .par_iter()
+        .iter()
         .map(|poly| HyraxCommitment::commit(poly, &read_write_generators))
         .collect::<Vec<_>>();
 

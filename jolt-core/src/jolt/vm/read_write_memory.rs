@@ -493,9 +493,9 @@ where
 
         let a_v_read_write_commitments = self
             .a_read_write
-            .par_iter()
-            .chain(self.v_read.par_iter())
-            .chain(self.v_write.par_iter())
+            .iter()
+            .chain(self.v_read.iter())
+            .chain(self.v_write.iter())
             .map(|poly| HyraxCommitment::commit(poly, &read_write_generators))
             .collect::<Vec<_>>();
         let t_read_write_commitments = batched_polys

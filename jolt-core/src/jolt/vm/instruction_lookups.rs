@@ -125,15 +125,15 @@ where
             HyraxGenerators::new(self.dim[0].get_num_vars(), pedersen_generators);
         let dim_read_commitment = self
             .dim
-            .par_iter()
-            .chain(self.read_cts.par_iter())
+            .iter()
+            .chain(self.read_cts.iter())
             .map(|poly| HyraxCommitment::commit(poly, &read_write_generators))
             .collect::<Vec<_>>();
 
         let E_flag_commitment = self
             .E_polys
-            .par_iter()
-            .chain(self.instruction_flag_polys.par_iter())
+            .iter()
+            .chain(self.instruction_flag_polys.iter())
             .map(|poly| HyraxCommitment::commit(poly, &read_write_generators))
             .collect::<Vec<_>>();
 

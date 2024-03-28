@@ -486,7 +486,7 @@ pub trait Jolt<F: PrimeField, G: CurveGroup<ScalarField = F>, const C: usize, co
 
         // Commit to R1CS specific items
         let commit_to_chunks = |data: &Vec<F>| -> Vec<HyraxCommitment<NUM_R1CS_POLYS, G>> {
-            data.par_chunks(padded_trace_len)
+            data.chunks(padded_trace_len)
                 .map(|chunk| HyraxCommitment::commit_slice(chunk, &hyrax_generators))
                 .collect()
         };
